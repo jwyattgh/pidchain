@@ -9,18 +9,19 @@ on:
 
 jobs:
   test:
-    name: Test
+    name: Test (${{ matrix.os }}, Go ${{ matrix.go-version }})
     strategy:
       fail-fast: false
       matrix:
         os: [macos-latest, windows-latest, ubuntu-latest]
+        go-version: ['1.25', '1.26']
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: ${{ matrix.go-version }}
           cache-dependency-path: go.sum
 
       - name: Build
@@ -29,8 +30,62 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      - name: Install gotestsum
+        run: go install gotest.tools/gotestsum@latest
+
       - name: Test
-        run: go test -race ./...
+        shell: bash
+        run: |
+          gotestsum \
+            --junitfile "junit-${{ matrix.os }}-${{ matrix.go-version }}.xml" \
+            --format testname -- \
+            -race -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Upload JUnit results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: junit-${{ matrix.os }}-${{ matrix.go-version }}
+          path: junit-${{ matrix.os }}-${{ matrix.go-version }}.xml
+
+      - name: Coverage gate
+        if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.26'
+        shell: bash
+        run: |
+          COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+          echo "Total coverage: ${COVERAGE}%"
+          THRESHOLD=88
+          if (( $(echo "$COVERAGE < $THRESHOLD" | bc -l) )); then
+            echo "::error::Coverage ${COVERAGE}% is below threshold ${THRESHOLD}%"
+            exit 1
+          fi
+          echo "Coverage ${COVERAGE}% meets threshold ${THRESHOLD}%"
+
+      - name: Upload coverage to Codecov
+        if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.26'
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.out
+          fail_ci_if_error: false
+
+  publish-test-results:
+    name: Publish test results
+    needs: test
+    runs-on: ubuntu-latest
+    if: always()
+    permissions:
+      checks: write
+      pull-requests: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: junit-*
+          merge-multiple: true
+
+      - uses: EnricoMi/publish-unit-test-result-action@v2
+        with:
+          files: junit-*.xml
 
   lint:
     name: Lint
@@ -49,4 +104,23 @@ jobs:
             | sh -s -- -b $(go env GOPATH)/bin v2.6.2
 
       - name: Run golangci-lint
-        run: golangci-lint run --timeout=5m
+        run: golangci-lint run
+
+  security:
+    name: Security scan
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run gosec
+        uses: securego/gosec@master
+        with:
+          args: '-fmt sarif -out gosec.sarif ./...'
+
+      - name: Upload gosec SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: gosec.sarif

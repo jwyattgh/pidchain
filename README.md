@@ -65,7 +65,7 @@ It does not apply to TCP loopback, HTTP over localhost, or any remote connection
 go get github.com/jwyattgh/pidchain
 ```
 
-Requires Go 1.26+. Builds with CGo enabled on macOS and Windows.
+Requires Go 1.25+. Builds with CGo enabled on macOS and Windows.
 
 ## API reference
 

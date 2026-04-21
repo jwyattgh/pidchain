@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/jwyattgh/pidchain"
-	"github.com/jwyattgh/pidchain/internal/canonical"
 )
 
 func TestErrorSentinels_Distinct(t *testing.T) {
@@ -140,9 +139,9 @@ func TestChain_Self_IdentityFieldsStable(t *testing.T) {
 }
 
 // TestPublicAPIConsistency proves the two public functions are internally
-// consistent: Fingerprint(pid) equals hex(sha256(canonical.Bytes(Chain(pid))))
-// for the same pid. They walk the same way and use the same canonical
-// helper; this test would catch any future divergence.
+// consistent: Fingerprint(pid) equals hex(sha256(concat(Chain(pid) codesign
+// fields))) for the same pid. They share one internal build path; this test
+// catches any future divergence between the two wrappers.
 func TestPublicAPIConsistency(t *testing.T) {
 	if runtime.GOOS != "darwin" && runtime.GOOS != "windows" {
 		t.Skip("requires a supported platform")
@@ -156,22 +155,15 @@ func TestPublicAPIConsistency(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ancestors := make([]canonical.Ancestor, len(chain))
-	for i, p := range chain {
-		ancestors[i] = canonical.Ancestor{
-			TeamID:           p.TeamID,
-			BundleIdentifier: p.BundleIdentifier,
-			AuthorityLeaf:    p.AuthorityLeaf,
-		}
+	h := sha256.New()
+	for _, p := range chain {
+		h.Write([]byte(p.TeamID))
+		h.Write([]byte(p.BundleIdentifier))
+		h.Write([]byte(p.AuthorityLeaf))
 	}
-	bytes, err := canonical.Bytes(ancestors)
-	if err != nil {
-		t.Fatalf("canonical.Bytes: %v", err)
-	}
-	sum := sha256.Sum256(bytes)
-	want := hex.EncodeToString(sum[:])
+	want := hex.EncodeToString(h.Sum(nil))
 
 	if fp != want {
-		t.Fatalf("Fingerprint != hex(sha256(canonical(Chain))):\n  Fingerprint: %s\n  Computed:    %s", fp, want)
+		t.Fatalf("Fingerprint != hex(sha256(concat(Chain fields))):\n  Fingerprint: %s\n  Computed:    %s", fp, want)
 	}
 }

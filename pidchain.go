@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"errors"
 
-	"github.com/jwyattgh/pidchain/internal/canonical"
 	"github.com/jwyattgh/pidchain/internal/walker"
 )
 
@@ -32,6 +31,39 @@ type ProcessInfo struct {
 	AuthorityLeaf    string // platform-specific signing-authority label
 }
 
+// build does one kernel walk and returns both the chain and its
+// fingerprint. Fingerprint and Chain are thin wrappers that each expose
+// one of the two values. Sharing this code path makes divergence between
+// the two public functions structurally impossible.
+func build(pid int) (ProcessChain, string, error) {
+	entries, walkErr := walker.Walk(pid)
+	if walkErr != nil && !errors.Is(walkErr, walker.ErrMaxDepthExceeded) {
+		return nil, "", translateWalkerErr(walkErr)
+	}
+
+	chain := make(ProcessChain, len(entries))
+	h := sha256.New()
+	for i, e := range entries {
+		chain[i] = ProcessInfo{
+			PID:              e.PID,
+			ParentPID:        e.ParentPID,
+			BinaryPath:       e.BinaryPath,
+			TeamID:           e.TeamID,
+			BundleIdentifier: e.BundleIdentifier,
+			AuthorityLeaf:    e.AuthorityLeaf,
+		}
+		h.Write([]byte(e.TeamID))
+		h.Write([]byte(e.BundleIdentifier))
+		h.Write([]byte(e.AuthorityLeaf))
+	}
+	fp := hex.EncodeToString(h.Sum(nil))
+
+	if errors.Is(walkErr, walker.ErrMaxDepthExceeded) {
+		return chain, fp, ErrMaxDepthExceeded
+	}
+	return chain, fp, nil
+}
+
 // Fingerprint returns a lowercase hex-encoded SHA256 identifying the full
 // process ancestry rooted at pid. Deterministic: identical ancestry
 // produces an identical fingerprint. Any change to any ancestor's
@@ -43,25 +75,11 @@ type ProcessInfo struct {
 // On ErrMaxDepthExceeded the returned string is still the fingerprint of
 // the 32-entry partial chain; the consumer decides whether to accept it.
 func Fingerprint(pid int) (string, error) {
-	chain, err := Chain(pid)
+	_, fp, err := build(pid)
 	if err != nil && !errors.Is(err, ErrMaxDepthExceeded) {
 		return "", err
 	}
-
-	ancestors := make([]canonical.Ancestor, len(chain))
-	for i, p := range chain {
-		ancestors[i] = canonical.Ancestor{
-			TeamID:           p.TeamID,
-			BundleIdentifier: p.BundleIdentifier,
-			AuthorityLeaf:    p.AuthorityLeaf,
-		}
-	}
-	bytes, cerr := canonical.Bytes(ancestors)
-	if cerr != nil {
-		return "", cerr
-	}
-	sum := sha256.Sum256(bytes)
-	return hex.EncodeToString(sum[:]), err
+	return fp, err
 }
 
 // Chain returns the walked process ancestry as structured data. Intended
@@ -75,26 +93,11 @@ func Fingerprint(pid int) (string, error) {
 // On ErrMaxDepthExceeded the returned chain holds the 32 successfully
 // walked entries.
 func Chain(pid int) (ProcessChain, error) {
-	entries, err := walker.Walk(pid)
-	if err != nil && !errors.Is(err, walker.ErrMaxDepthExceeded) {
-		return nil, translateWalkerErr(err)
+	chain, _, err := build(pid)
+	if err != nil && !errors.Is(err, ErrMaxDepthExceeded) {
+		return nil, err
 	}
-
-	chain := make(ProcessChain, len(entries))
-	for i, e := range entries {
-		chain[i] = ProcessInfo{
-			PID:              e.PID,
-			ParentPID:        e.ParentPID,
-			BinaryPath:       e.BinaryPath,
-			TeamID:           e.TeamID,
-			BundleIdentifier: e.BundleIdentifier,
-			AuthorityLeaf:    e.AuthorityLeaf,
-		}
-	}
-	if errors.Is(err, walker.ErrMaxDepthExceeded) {
-		return chain, ErrMaxDepthExceeded
-	}
-	return chain, nil
+	return chain, err
 }
 
 func translateWalkerErr(err error) error {

@@ -7,6 +7,8 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions: {}
+
 jobs:
   test:
     name: Test (${{ matrix.os }}, Go ${{ matrix.go-version }})
@@ -17,6 +19,8 @@ jobs:
         os: [macos-latest, windows-latest, ubuntu-latest]
         go-version: ['1.25', '1.26']
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -76,6 +80,7 @@ jobs:
     runs-on: ubuntu-latest
     if: always() && github.event_name != 'pull_request'
     permissions:
+      contents: read
       checks: write
       pull-requests: write
     steps:
@@ -92,6 +97,8 @@ jobs:
     name: Lint
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -113,6 +120,7 @@ jobs:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       security-events: write
     steps:
       - uses: actions/checkout@v4
@@ -132,6 +140,8 @@ jobs:
     name: PR verify (ubuntu-latest, Go 1.26)
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 

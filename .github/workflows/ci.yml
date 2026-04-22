@@ -124,16 +124,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run gosec
-        uses: securego/gosec@master
+      - name: Run gosec (produce SARIF)
+        uses: securego/gosec@v2
+        continue-on-error: true
         with:
           args: '-fmt sarif -out gosec.sarif ./...'
 
-      - name: Upload gosec SARIF
+      - name: Upload SARIF to Security tab
+        if: always() && hashFiles('gosec.sarif') != ''
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
         with:
           sarif_file: gosec.sarif
+
+      - name: Fail on gosec findings
+        if: always()
+        shell: bash
+        run: |
+          if [ ! -s gosec.sarif ]; then
+            echo "::error::gosec did not produce a SARIF file"
+            exit 1
+          fi
+          findings=$(jq '[.runs[].results[]] | length' gosec.sarif)
+          if [ "$findings" -gt 0 ]; then
+            echo "::error::gosec found $findings issue(s) — see Security tab"
+            jq -r '.runs[].results[] | "\(.locations[0].physicalLocation.artifactLocation.uri):\(.locations[0].physicalLocation.region.startLine): \(.message.text)"' gosec.sarif
+            exit 1
+          fi
+          echo "gosec found 0 issues"
 
   vuln:
     name: Vulnerability scan

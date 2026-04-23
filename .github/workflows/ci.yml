@@ -56,7 +56,6 @@ jobs:
           path: junit-${{ matrix.os }}-${{ matrix.go-version }}.xml
 
       - name: Coverage gate (per-OS)
-        if: matrix.go-version == '1.26'
         shell: bash
         run: |
           COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
@@ -125,7 +124,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run gosec (produce SARIF)
-        uses: securego/gosec@v2
+        uses: securego/gosec@v2.25.0
         continue-on-error: true
         with:
           args: '-fmt sarif -out gosec.sarif ./...'

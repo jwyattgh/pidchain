@@ -59,3 +59,53 @@ func TestBuild_MaxDepthExceeded_ReturnsChainAndFingerprint(t *testing.T) {
 		t.Fatalf("fingerprint length: got %d want 64", len(fp))
 	}
 }
+
+// simpleChainFake produces a short, well-terminated ancestry so tests can
+// drive Fingerprint and Chain through their full success-return paths on
+// every OS, including Linux where platform-specific integration tests skip.
+type simpleChainFake struct{}
+
+func (simpleChainFake) Lookup(pid int) (int, string, error) {
+	switch pid {
+	case 100:
+		return 50, "/bin/app", nil
+	case 50:
+		return 0, "/sbin/init", nil
+	}
+	return 0, "", walker.ErrProcessDead
+}
+
+func (simpleChainFake) Codesign(path string) (string, string, string) {
+	return "TEAM", "bundle." + path, "Authority"
+}
+
+func TestFingerprint_SuccessPathViaFake(t *testing.T) {
+	orig := walker.New
+	walker.New = func() walker.Platform { return simpleChainFake{} }
+	t.Cleanup(func() { walker.New = orig })
+
+	fp, err := Fingerprint(100)
+	if err != nil {
+		t.Fatalf("Fingerprint: %v", err)
+	}
+	if len(fp) != 64 {
+		t.Fatalf("fingerprint length: got %d want 64", len(fp))
+	}
+}
+
+func TestChain_SuccessPathViaFake(t *testing.T) {
+	orig := walker.New
+	walker.New = func() walker.Platform { return simpleChainFake{} }
+	t.Cleanup(func() { walker.New = orig })
+
+	chain, err := Chain(100)
+	if err != nil {
+		t.Fatalf("Chain: %v", err)
+	}
+	if len(chain) != 2 {
+		t.Fatalf("chain length: got %d want 2", len(chain))
+	}
+	if chain[0].PID != 100 || chain[1].PID != 50 {
+		t.Fatalf("walk order wrong: %+v", chain)
+	}
+}

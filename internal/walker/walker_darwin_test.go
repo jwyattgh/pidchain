@@ -7,6 +7,43 @@ import (
 	"testing"
 )
 
+func TestDarwinPlatform_NewReturnsDarwinPlatform(t *testing.T) {
+	orig := New
+	t.Cleanup(func() { New = orig })
+	New = orig
+	if _, ok := New().(darwinPlatform); !ok {
+		t.Fatalf("New() returned %T, want darwinPlatform", New())
+	}
+}
+
+// TestDarwinPlatform_CodesignDeveloperIDBinary exercises the TeamID-populated
+// branch of Codesign. Ad-hoc platform binaries like /bin/ls leave TeamID
+// empty; this test probes a short list of paths where Developer-ID signed
+// binaries typically live. Skips if none are present — the branch stays
+// uncovered in that environment, not a failure.
+func TestDarwinPlatform_CodesignDeveloperIDBinary(t *testing.T) {
+	candidates := []string{
+		"/usr/local/bin/node",
+		"/opt/homebrew/bin/node",
+		"/opt/homebrew/bin/go",
+		"/usr/local/go/bin/go",
+		"/opt/homebrew/bin/brew",
+		"/opt/homebrew/bin/python3",
+		"/usr/local/bin/python3",
+	}
+	p := darwinPlatform{}
+	for _, path := range candidates {
+		if _, err := os.Stat(path); err != nil {
+			continue
+		}
+		team, _, _ := p.Codesign(path)
+		if team != "" {
+			return
+		}
+	}
+	t.Skip("no Developer-ID signed binary found at known paths; TeamID branch not exercised")
+}
+
 // These tests exercise the real libproc + Security.framework path. They
 // verify the CGo bindings work and produce sensible output for the current
 // process. They do not assert on specific TeamID/Authority values because

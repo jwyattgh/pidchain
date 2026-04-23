@@ -7,6 +7,53 @@ import (
 	"testing"
 )
 
+func TestWindowsPlatform_NewReturnsWindowsPlatform(t *testing.T) {
+	orig := New
+	t.Cleanup(func() { New = orig })
+	New = orig
+	if _, ok := New().(windowsPlatform); !ok {
+		t.Fatalf("New() returned %T, want windowsPlatform", New())
+	}
+}
+
+// TestWindowsPlatform_CodesignPathWithNullByte exercises the
+// UTF16PtrFromString error branch. A Go string containing a null byte
+// cannot round-trip to a null-terminated UTF-16 buffer, so Codesign must
+// return empty fields without calling into the Crypt API.
+func TestWindowsPlatform_CodesignPathWithNullByte(t *testing.T) {
+	p := windowsPlatform{}
+	team, bundle, auth := p.Codesign("C:\\Windows\\notepad\x00.exe")
+	if team != "" || bundle != "" || auth != "" {
+		t.Fatalf("expected empty fields for null-byte path, got %q %q %q", team, bundle, auth)
+	}
+}
+
+// TestWindowsPlatform_CodesignProbeSignedBinary covers the cTeam/cBundle/
+// cAuth populated branches of Codesign by probing a few paths where
+// Authenticode-signed binaries with embedded (not catalog) signatures are
+// commonly present. Skips if none produce a non-empty signature field on
+// this runner — the branches stay uncovered in that environment.
+func TestWindowsPlatform_CodesignProbeSignedBinary(t *testing.T) {
+	candidates := []string{
+		`C:\Windows\System32\cmd.exe`,
+		`C:\Windows\System32\calc.exe`,
+		`C:\Windows\System32\notepad.exe`,
+		`C:\Windows\explorer.exe`,
+		`C:\Program Files\Git\bin\git.exe`,
+	}
+	p := windowsPlatform{}
+	for _, path := range candidates {
+		if _, err := os.Stat(path); err != nil {
+			continue
+		}
+		team, bundle, auth := p.Codesign(path)
+		if team != "" || bundle != "" || auth != "" {
+			return
+		}
+	}
+	t.Skip("no probed binary produced Authenticode fields on this runner; populated branches not exercised")
+}
+
 // These tests exercise the real Toolhelp32 + Crypt API path. They verify
 // the bindings work on a real Windows host and produce sensible output
 // for the current process. Specific Authenticode field values vary by

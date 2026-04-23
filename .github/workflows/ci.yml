@@ -55,18 +55,18 @@ jobs:
           name: junit-${{ matrix.os }}-${{ matrix.go-version }}
           path: junit-${{ matrix.os }}-${{ matrix.go-version }}.xml
 
-      - name: Coverage gate
-        if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.26'
+      - name: Coverage gate (per-OS)
+        if: matrix.go-version == '1.26'
         shell: bash
         run: |
           COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
-          echo "Total coverage: ${COVERAGE}%"
-          THRESHOLD=88
+          echo "Coverage on ${{ matrix.os }}: ${COVERAGE}%"
+          THRESHOLD=95
           if (( $(echo "$COVERAGE < $THRESHOLD" | bc -l) )); then
-            echo "::error::Coverage ${COVERAGE}% is below threshold ${THRESHOLD}%"
+            echo "::error::Coverage on ${{ matrix.os }} is ${COVERAGE}%, below threshold ${THRESHOLD}%"
             exit 1
           fi
-          echo "Coverage ${COVERAGE}% meets threshold ${THRESHOLD}%"
+          echo "Coverage on ${{ matrix.os }} meets threshold ${THRESHOLD}%"
 
       - name: Upload coverage to Codecov
         if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.26'

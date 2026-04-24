@@ -14,7 +14,6 @@ permissions: {}
 jobs:
   test:
     name: Test (${{ matrix.os }}, Go ${{ matrix.go-version }})
-    if: github.event_name != 'pull_request'
     strategy:
       fail-fast: false
       matrix:
@@ -90,7 +89,7 @@ jobs:
     name: Publish test results
     needs: test
     runs-on: ubuntu-latest
-    if: always() && github.event_name != 'pull_request'
+    if: always()
     permissions:
       contents: read
       checks: write
@@ -107,7 +106,6 @@ jobs:
 
   lint:
     name: Lint
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -126,7 +124,6 @@ jobs:
 
   security:
     name: Security scan
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -165,7 +162,6 @@ jobs:
 
   vuln:
     name: Vulnerability scan
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -181,31 +177,3 @@ jobs:
         uses: golang/govulncheck-action@v1
         with:
           go-version-input: '1.26'
-
-  pr-verify:
-    name: PR verify (ubuntu-latest, Go 1.26)
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.26'
-          cache-dependency-path: go.sum
-
-      - name: Build
-        run: go build ./...
-
-      - name: Vet
-        run: go vet ./...
-
-      - name: Test
-        run: go test -race ./...
-
-      - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v7
-        with:
-          version: v2.6.2

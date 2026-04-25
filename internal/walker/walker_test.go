@@ -3,6 +3,8 @@ package walker
 import (
 	"errors"
 	"testing"
+
+	"github.com/jwyattgh/pidchain/internal/types"
 )
 
 // fakePlatform is a test double satisfying Platform. Lookups and codesign
@@ -29,7 +31,7 @@ func (f *fakePlatform) Lookup(pid int) (int, string, error) {
 	if l, ok := f.lookups[pid]; ok {
 		return l.parentPID, l.binaryPath, nil
 	}
-	return 0, "", ErrProcessDead
+	return 0, "", types.ErrProcessDead
 }
 
 func (f *fakePlatform) Codesign(path string) (string, string, string) {
@@ -65,47 +67,56 @@ func TestWalk_LinearChainTerminatesAtPID1(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(chain) != 3 {
-		t.Fatalf("chain length: got %d want 3", len(chain))
+	if len(chain.Entries) != 3 {
+		t.Fatalf("chain length: got %d want 3", len(chain.Entries))
 	}
-	if chain[0].PID != 100 || chain[1].PID != 50 || chain[2].PID != 1 {
-		t.Fatalf("walk order wrong: %+v", chain)
+	if chain.Entries[0].PID != 100 || chain.Entries[1].PID != 50 || chain.Entries[2].PID != 1 {
+		t.Fatalf("walk order wrong: %+v", chain.Entries)
 	}
-	if chain[0].TeamID != "T1" || chain[2].BundleIdentifier != "com.apple.launchd" {
-		t.Fatalf("codesign data not stitched in: %+v", chain)
+	if chain.Entries[0].TeamID != "T1" || chain.Entries[2].BundleIdentifier != "com.apple.launchd" {
+		t.Fatalf("codesign data not stitched in: %+v", chain.Entries)
+	}
+	if len(chain.Fingerprint) != 64 {
+		t.Fatalf("fingerprint length: got %d want 64", len(chain.Fingerprint))
 	}
 }
 
 func TestWalk_StartPIDDeadReturnsErrProcessDead(t *testing.T) {
-	fake := &fakePlatform{lookupErr: map[int]error{42: ErrProcessDead}}
+	fake := &fakePlatform{lookupErr: map[int]error{42: types.ErrProcessDead}}
 	withPlatform(t, fake)
 
 	chain, err := Walk(42)
-	if !errors.Is(err, ErrProcessDead) {
+	if !errors.Is(err, types.ErrProcessDead) {
 		t.Fatalf("want ErrProcessDead, got %v", err)
 	}
-	if chain != nil {
-		t.Fatalf("want nil chain on start-dead, got %+v", chain)
+	if chain.Entries != nil {
+		t.Fatalf("want nil entries on start-dead, got %+v", chain.Entries)
+	}
+	if chain.Fingerprint != "" {
+		t.Fatalf("want empty fingerprint on start-dead, got %q", chain.Fingerprint)
 	}
 }
 
 func TestWalk_StartPIDPlatformUnsupportedSurfaces(t *testing.T) {
-	fake := &fakePlatform{lookupErr: map[int]error{7: ErrPlatformUnsupported}}
+	fake := &fakePlatform{lookupErr: map[int]error{7: types.ErrPlatformUnsupported}}
 	withPlatform(t, fake)
 
 	chain, err := Walk(7)
-	if !errors.Is(err, ErrPlatformUnsupported) {
+	if !errors.Is(err, types.ErrPlatformUnsupported) {
 		t.Fatalf("want ErrPlatformUnsupported, got %v", err)
 	}
-	if chain != nil {
-		t.Fatalf("want nil chain, got %+v", chain)
+	if chain.Entries != nil {
+		t.Fatalf("want nil entries, got %+v", chain.Entries)
+	}
+	if chain.Fingerprint != "" {
+		t.Fatalf("want empty fingerprint, got %q", chain.Fingerprint)
 	}
 }
 
 func TestWalk_AncestorDeadReturnsPartialChainNoError(t *testing.T) {
 	fake := &fakePlatform{
 		lookups:   map[int]lookupResult{10: {parentPID: 5, binaryPath: "/a"}},
-		lookupErr: map[int]error{5: ErrProcessDead},
+		lookupErr: map[int]error{5: types.ErrProcessDead},
 	}
 	withPlatform(t, fake)
 
@@ -113,8 +124,11 @@ func TestWalk_AncestorDeadReturnsPartialChainNoError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("want nil error for mid-walk truncation, got %v", err)
 	}
-	if len(chain) != 1 || chain[0].PID != 10 {
-		t.Fatalf("want single-entry partial chain, got %+v", chain)
+	if len(chain.Entries) != 1 || chain.Entries[0].PID != 10 {
+		t.Fatalf("want single-entry partial chain, got %+v", chain.Entries)
+	}
+	if len(chain.Fingerprint) != 64 {
+		t.Fatalf("want populated fingerprint on mid-walk truncation, got %q", chain.Fingerprint)
 	}
 }
 
@@ -128,8 +142,8 @@ func TestWalk_ParentZeroTerminatesWithoutError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(chain) != 1 || chain[0].PID != 99 {
-		t.Fatalf("unexpected chain: %+v", chain)
+	if len(chain.Entries) != 1 || chain.Entries[0].PID != 99 {
+		t.Fatalf("unexpected chain: %+v", chain.Entries)
 	}
 }
 
@@ -142,11 +156,14 @@ func TestWalk_MaxDepthExceeded(t *testing.T) {
 	withPlatform(t, fake)
 
 	chain, err := Walk(1000)
-	if !errors.Is(err, ErrMaxDepthExceeded) {
+	if !errors.Is(err, types.ErrMaxDepthExceeded) {
 		t.Fatalf("want ErrMaxDepthExceeded, got %v", err)
 	}
-	if len(chain) != MaxDepth {
-		t.Fatalf("partial chain length: got %d want %d", len(chain), MaxDepth)
+	if len(chain.Entries) != MaxDepth {
+		t.Fatalf("partial chain length: got %d want %d", len(chain.Entries), MaxDepth)
+	}
+	if len(chain.Fingerprint) != 64 {
+		t.Fatalf("MaxDepth fingerprint length: got %d want 64", len(chain.Fingerprint))
 	}
 }
 
@@ -159,7 +176,7 @@ func TestWalk_KernelTerminatorReachedMidwalk(t *testing.T) {
 			500: {parentPID: 200, binaryPath: "/leaf"},
 			200: {parentPID: 1, binaryPath: "/middle"},
 		},
-		lookupErr: map[int]error{1: ErrProcessDead},
+		lookupErr: map[int]error{1: types.ErrProcessDead},
 	}
 	withPlatform(t, fake)
 
@@ -167,7 +184,7 @@ func TestWalk_KernelTerminatorReachedMidwalk(t *testing.T) {
 	if err != nil {
 		t.Fatalf("kernel terminator should not be an error, got %v", err)
 	}
-	if len(chain) != 2 {
-		t.Fatalf("want 2-entry partial chain (terminator excluded), got %d", len(chain))
+	if len(chain.Entries) != 2 {
+		t.Fatalf("want 2-entry partial chain (terminator excluded), got %d", len(chain.Entries))
 	}
 }

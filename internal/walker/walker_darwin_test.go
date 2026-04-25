@@ -37,8 +37,8 @@ func TestDarwinPlatform_CodesignDeveloperIDBinary(t *testing.T) {
 		if _, err := os.Stat(path); err != nil {
 			continue
 		}
-		team, _, _ := p.Codesign(path)
-		if team != "" {
+		info := p.Codesign(ProcessInfo{BinaryPath: path})
+		if info.TeamID != "" {
 			return
 		}
 	}
@@ -92,24 +92,27 @@ func TestDarwinPlatform_CodesignAdHocBinary(t *testing.T) {
 	// /bin/ls is platform-signed (ad-hoc) on every Mac. Identifier is
 	// reliably populated; TeamID may be empty (ad-hoc has no team).
 	p := darwinPlatform{}
-	team, bundle, auth := p.Codesign("/bin/ls")
-	if bundle == "" && auth == "" && team == "" {
-		t.Skipf("Security.framework returned no fields for /bin/ls (sandbox/TCC?): team=%q bundle=%q auth=%q", team, bundle, auth)
+	info := p.Codesign(ProcessInfo{BinaryPath: "/bin/ls"})
+	if info.BundleIdentifier == "" && info.AuthorityLeaf == "" && info.TeamID == "" {
+		t.Skipf("Security.framework returned no fields for /bin/ls (sandbox/TCC?): team=%q bundle=%q auth=%q",
+			info.TeamID, info.BundleIdentifier, info.AuthorityLeaf)
 	}
 }
 
 func TestDarwinPlatform_CodesignNonexistentPath(t *testing.T) {
 	p := darwinPlatform{}
-	team, bundle, auth := p.Codesign("/nonexistent/binary")
-	if team != "" || bundle != "" || auth != "" {
-		t.Fatalf("expected empty fields for nonexistent path, got %q %q %q", team, bundle, auth)
+	info := p.Codesign(ProcessInfo{BinaryPath: "/nonexistent/binary"})
+	if info.TeamID != "" || info.BundleIdentifier != "" || info.AuthorityLeaf != "" {
+		t.Fatalf("expected empty fields for nonexistent path, got %q %q %q",
+			info.TeamID, info.BundleIdentifier, info.AuthorityLeaf)
 	}
 }
 
 func TestDarwinPlatform_CodesignEmptyPath(t *testing.T) {
 	p := darwinPlatform{}
-	team, bundle, auth := p.Codesign("")
-	if team != "" || bundle != "" || auth != "" {
-		t.Fatalf("expected empty fields for empty path, got %q %q %q", team, bundle, auth)
+	info := p.Codesign(ProcessInfo{BinaryPath: ""})
+	if info.TeamID != "" || info.BundleIdentifier != "" || info.AuthorityLeaf != "" {
+		t.Fatalf("expected empty fields for empty path, got %q %q %q",
+			info.TeamID, info.BundleIdentifier, info.AuthorityLeaf)
 	}
 }

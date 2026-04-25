@@ -183,42 +183,41 @@ func fullImagePath(pid int) string {
 	return syscall.UTF16ToString(buf[:size])
 }
 
-// Codesign extracts the three Authenticode fields via the Crypt API in
-// CGo. Returns empty strings on any failure (unsigned binary, missing
-// path, API error). Codesign failure is never fatal: the ancestor still
-// belongs in the chain, just with empty identity fields.
+// Codesign populates the three Authenticode fields on info via the Crypt
+// API in CGo. Returns info unchanged on any failure (unsigned binary,
+// missing path, API error). Codesign failure is never fatal: the ancestor
+// still belongs in the chain, just with empty identity fields.
 //
 // Field mapping (per spec):
 //   - Subject Organization (O)  -> TeamID
 //   - Subject Common Name (CN)  -> BundleIdentifier
 //   - Issuer Common Name (CN)   -> AuthorityLeaf
-func (windowsPlatform) Codesign(path string) (string, string, string) {
-	if path == "" {
-		return "", "", ""
+func (windowsPlatform) Codesign(info ProcessInfo) ProcessInfo {
+	if info.BinaryPath == "" {
+		return info
 	}
-	wpath, err := syscall.UTF16PtrFromString(path)
+	wpath, err := syscall.UTF16PtrFromString(info.BinaryPath)
 	if err != nil {
-		return "", "", ""
+		return info
 	}
 
 	var cTeam, cBundle, cAuth *C.char
 	rc := C.pidchain_authenticode((*C.wchar_t)(unsafe.Pointer(wpath)), &cTeam, &cBundle, &cAuth)
 	if rc != 0 {
-		return "", "", ""
+		return info
 	}
 
-	var team, bundle, auth string
 	if cTeam != nil {
-		team = C.GoString(cTeam)
+		info.TeamID = C.GoString(cTeam)
 		C.free(unsafe.Pointer(cTeam))
 	}
 	if cBundle != nil {
-		bundle = C.GoString(cBundle)
+		info.BundleIdentifier = C.GoString(cBundle)
 		C.free(unsafe.Pointer(cBundle))
 	}
 	if cAuth != nil {
-		auth = C.GoString(cAuth)
+		info.AuthorityLeaf = C.GoString(cAuth)
 		C.free(unsafe.Pointer(cAuth))
 	}
-	return team, bundle, auth
+	return info
 }

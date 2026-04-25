@@ -29,8 +29,9 @@ func TestUnsupportedPlatform_LookupReturnsErrPlatformUnsupported(t *testing.T) {
 
 func TestUnsupportedPlatform_CodesignReturnsEmpty(t *testing.T) {
 	p := unsupportedPlatform{}
-	team, bundle, auth := p.Codesign("/anything")
-	if team != "" || bundle != "" || auth != "" {
-		t.Fatalf("want all empty fields, got team=%q bundle=%q auth=%q", team, bundle, auth)
+	info := p.Codesign(ProcessInfo{BinaryPath: "/anything"})
+	if info.TeamID != "" || info.BundleIdentifier != "" || info.AuthorityLeaf != "" {
+		t.Fatalf("want all empty fields, got team=%q bundle=%q auth=%q",
+			info.TeamID, info.BundleIdentifier, info.AuthorityLeaf)
 	}
 }

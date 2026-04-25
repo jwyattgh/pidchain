@@ -12,6 +12,6 @@ func (unsupportedPlatform) Lookup(int) (int, string, error) {
 	return 0, "", ErrPlatformUnsupported
 }
 
-func (unsupportedPlatform) Codesign(string) (string, string, string) {
-	return "", "", ""
+func (unsupportedPlatform) Codesign(info ProcessInfo) ProcessInfo {
+	return info
 }

@@ -113,35 +113,34 @@ func (darwinPlatform) Lookup(pid int) (int, string, error) {
 	return int(bsd.pbi_ppid), path, nil
 }
 
-// Codesign extracts the three signing fields from the binary at path via
-// Security.framework. Returns empty strings on any failure (unsigned
-// binary, missing path, API error, ad-hoc signed binary with no team).
-// Codesign failure is never fatal: the ancestor still belongs in the
-// chain, just with empty identity fields.
-func (darwinPlatform) Codesign(path string) (string, string, string) {
-	if path == "" {
-		return "", "", ""
+// Codesign populates the three signing fields on info from the binary at
+// info.BinaryPath via Security.framework. Returns info unchanged on any
+// failure (unsigned binary, missing path, API error, ad-hoc signed binary
+// with no team). Codesign failure is never fatal: the ancestor still
+// belongs in the chain, just with empty identity fields.
+func (darwinPlatform) Codesign(info ProcessInfo) ProcessInfo {
+	if info.BinaryPath == "" {
+		return info
 	}
-	cPath := C.CString(path)
+	cPath := C.CString(info.BinaryPath)
 	defer C.free(unsafe.Pointer(cPath))
 
 	var cTeam, cBundle, cAuth *C.char
 	if rc := C.pidchain_codesign(cPath, &cTeam, &cBundle, &cAuth); rc != 0 {
-		return "", "", ""
+		return info
 	}
 
-	var team, bundle, auth string
 	if cTeam != nil {
-		team = C.GoString(cTeam)
+		info.TeamID = C.GoString(cTeam)
 		C.free(unsafe.Pointer(cTeam))
 	}
 	if cBundle != nil {
-		bundle = C.GoString(cBundle)
+		info.BundleIdentifier = C.GoString(cBundle)
 		C.free(unsafe.Pointer(cBundle))
 	}
 	if cAuth != nil {
-		auth = C.GoString(cAuth)
+		info.AuthorityLeaf = C.GoString(cAuth)
 		C.free(unsafe.Pointer(cAuth))
 	}
-	return team, bundle, auth
+	return info
 }

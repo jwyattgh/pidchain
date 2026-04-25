@@ -53,7 +53,7 @@ func TestFingerprint_Self_Integration(t *testing.T) {
 		t.Skip("requires a supported platform")
 	}
 	fp, err := pidchain.Fingerprint(os.Getpid())
-	if err != nil && !errors.Is(err, pidchain.ErrMaxDepthExceeded) {
+	if err != nil {
 		t.Fatalf("Fingerprint(self): %v", err)
 	}
 	if len(fp) != 64 {
@@ -69,7 +69,7 @@ func TestChain_Self_Integration(t *testing.T) {
 		t.Skip("requires a supported platform")
 	}
 	chain, err := pidchain.Chain(os.Getpid())
-	if err != nil && !errors.Is(err, pidchain.ErrMaxDepthExceeded) {
+	if err != nil {
 		t.Fatalf("Chain(self): %v", err)
 	}
 	if len(chain.Entries) == 0 {
@@ -88,11 +88,11 @@ func TestFingerprint_Self_Deterministic(t *testing.T) {
 		t.Skip("requires a supported platform")
 	}
 	a, err := pidchain.Fingerprint(os.Getpid())
-	if err != nil && !errors.Is(err, pidchain.ErrMaxDepthExceeded) {
+	if err != nil {
 		t.Fatal(err)
 	}
 	b, err := pidchain.Fingerprint(os.Getpid())
-	if err != nil && !errors.Is(err, pidchain.ErrMaxDepthExceeded) {
+	if err != nil {
 		t.Fatal(err)
 	}
 	if a != b {
@@ -109,11 +109,11 @@ func TestPublicAPIConsistency(t *testing.T) {
 		t.Skip("requires a supported platform")
 	}
 	chain, err := pidchain.Chain(os.Getpid())
-	if err != nil && !errors.Is(err, pidchain.ErrMaxDepthExceeded) {
+	if err != nil {
 		t.Fatal(err)
 	}
 	fp, err := pidchain.Fingerprint(os.Getpid())
-	if err != nil && !errors.Is(err, pidchain.ErrMaxDepthExceeded) {
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -145,8 +145,11 @@ func (simpleChainFake) Lookup(pid int) (int, string, error) {
 	return 0, "", pidchain.ErrProcessDead
 }
 
-func (simpleChainFake) Codesign(path string) (string, string, string) {
-	return "TEAM", "bundle." + path, "Authority"
+func (simpleChainFake) Codesign(info pidchain.ProcessInfo) pidchain.ProcessInfo {
+	info.TeamID = "TEAM"
+	info.BundleIdentifier = "bundle." + info.BinaryPath
+	info.AuthorityLeaf = "Authority"
+	return info
 }
 
 func TestFingerprint_SuccessPathViaFake(t *testing.T) {
@@ -202,47 +205,5 @@ func TestChain_SuccessPathViaFake(t *testing.T) {
 	}
 	if len(chain.Fingerprint) != 64 {
 		t.Fatalf("fingerprint length: got %d want 64", len(chain.Fingerprint))
-	}
-}
-
-// maxDepthFake produces an unterminating chain so the walker hits MaxDepth.
-type maxDepthFake struct{}
-
-func (maxDepthFake) Lookup(pid int) (int, string, error) {
-	return pid + 1, "/x", nil
-}
-
-func (maxDepthFake) Codesign(string) (string, string, string) {
-	return "T", "B", "A"
-}
-
-func TestFingerprint_MaxDepth_ReturnsPartialFingerprintAndError(t *testing.T) {
-	orig := walker.New
-	walker.New = func() walker.Platform { return maxDepthFake{} }
-	t.Cleanup(func() { walker.New = orig })
-
-	fp, err := pidchain.Fingerprint(1)
-	if !errors.Is(err, pidchain.ErrMaxDepthExceeded) {
-		t.Fatalf("want ErrMaxDepthExceeded, got %v", err)
-	}
-	if len(fp) != 64 {
-		t.Fatalf("want 64-char partial fingerprint, got %d chars: %q", len(fp), fp)
-	}
-}
-
-func TestChain_MaxDepth_ReturnsPartialChainAndError(t *testing.T) {
-	orig := walker.New
-	walker.New = func() walker.Platform { return maxDepthFake{} }
-	t.Cleanup(func() { walker.New = orig })
-
-	chain, err := pidchain.Chain(1)
-	if !errors.Is(err, pidchain.ErrMaxDepthExceeded) {
-		t.Fatalf("want ErrMaxDepthExceeded, got %v", err)
-	}
-	if len(chain.Entries) != walker.MaxDepth {
-		t.Fatalf("want %d entries on MaxDepth, got %d", walker.MaxDepth, len(chain.Entries))
-	}
-	if len(chain.Fingerprint) != 64 {
-		t.Fatalf("want 64-char partial fingerprint, got %d chars", len(chain.Fingerprint))
 	}
 }

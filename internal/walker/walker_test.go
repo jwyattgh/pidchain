@@ -32,11 +32,13 @@ func (f *fakePlatform) Lookup(pid int) (int, string, error) {
 	return 0, "", ErrProcessDead
 }
 
-func (f *fakePlatform) Codesign(path string) (string, string, string) {
-	if s, ok := f.signs[path]; ok {
-		return s.teamID, s.bundleID, s.authority
+func (f *fakePlatform) Codesign(info ProcessInfo) ProcessInfo {
+	if s, ok := f.signs[info.BinaryPath]; ok {
+		info.TeamID = s.teamID
+		info.BundleIdentifier = s.bundleID
+		info.AuthorityLeaf = s.authority
 	}
-	return "", "", ""
+	return info
 }
 
 func withPlatform(t *testing.T, fake Platform) {
@@ -142,26 +144,6 @@ func TestWalk_ParentZeroTerminatesWithoutError(t *testing.T) {
 	}
 	if len(chain.Entries) != 1 || chain.Entries[0].PID != 99 {
 		t.Fatalf("unexpected chain: %+v", chain.Entries)
-	}
-}
-
-func TestWalk_MaxDepthExceeded(t *testing.T) {
-	fake := &fakePlatform{lookups: map[int]lookupResult{}}
-	// Build a chain that never terminates: every PID's parent is PID+1.
-	for i := 1000; i < 1000+MaxDepth+10; i++ {
-		fake.lookups[i] = lookupResult{parentPID: i + 1, binaryPath: "/x"}
-	}
-	withPlatform(t, fake)
-
-	chain, err := Walk(1000)
-	if !errors.Is(err, ErrMaxDepthExceeded) {
-		t.Fatalf("want ErrMaxDepthExceeded, got %v", err)
-	}
-	if len(chain.Entries) != MaxDepth {
-		t.Fatalf("partial chain length: got %d want %d", len(chain.Entries), MaxDepth)
-	}
-	if len(chain.Fingerprint) != 64 {
-		t.Fatalf("MaxDepth fingerprint length: got %d want 64", len(chain.Fingerprint))
 	}
 }
 

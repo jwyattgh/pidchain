@@ -22,9 +22,10 @@ func TestWindowsPlatform_NewReturnsWindowsPlatform(t *testing.T) {
 // return empty fields without calling into the Crypt API.
 func TestWindowsPlatform_CodesignPathWithNullByte(t *testing.T) {
 	p := windowsPlatform{}
-	team, bundle, auth := p.Codesign("C:\\Windows\\notepad\x00.exe")
-	if team != "" || bundle != "" || auth != "" {
-		t.Fatalf("expected empty fields for null-byte path, got %q %q %q", team, bundle, auth)
+	info := p.Codesign(ProcessInfo{BinaryPath: "C:\\Windows\\notepad\x00.exe"})
+	if info.TeamID != "" || info.BundleIdentifier != "" || info.AuthorityLeaf != "" {
+		t.Fatalf("expected empty fields for null-byte path, got %q %q %q",
+			info.TeamID, info.BundleIdentifier, info.AuthorityLeaf)
 	}
 }
 
@@ -46,8 +47,8 @@ func TestWindowsPlatform_CodesignProbeSignedBinary(t *testing.T) {
 		if _, err := os.Stat(path); err != nil {
 			continue
 		}
-		team, bundle, auth := p.Codesign(path)
-		if team != "" || bundle != "" || auth != "" {
+		info := p.Codesign(ProcessInfo{BinaryPath: path})
+		if info.TeamID != "" || info.BundleIdentifier != "" || info.AuthorityLeaf != "" {
 			return
 		}
 	}
@@ -86,24 +87,27 @@ func TestWindowsPlatform_CodesignSystemBinary(t *testing.T) {
 	// every Windows install. All three Authenticode fields should be
 	// populated when CGo + crypt32 are working correctly.
 	p := windowsPlatform{}
-	team, bundle, auth := p.Codesign(`C:\Windows\System32\notepad.exe`)
-	if team == "" && bundle == "" && auth == "" {
-		t.Skipf("Crypt API returned no fields for notepad.exe (env issue?): team=%q bundle=%q auth=%q", team, bundle, auth)
+	info := p.Codesign(ProcessInfo{BinaryPath: `C:\Windows\System32\notepad.exe`})
+	if info.TeamID == "" && info.BundleIdentifier == "" && info.AuthorityLeaf == "" {
+		t.Skipf("Crypt API returned no fields for notepad.exe (env issue?): team=%q bundle=%q auth=%q",
+			info.TeamID, info.BundleIdentifier, info.AuthorityLeaf)
 	}
 }
 
 func TestWindowsPlatform_CodesignNonexistentPath(t *testing.T) {
 	p := windowsPlatform{}
-	team, bundle, auth := p.Codesign(`C:\nonexistent\binary.exe`)
-	if team != "" || bundle != "" || auth != "" {
-		t.Fatalf("expected empty fields for nonexistent path, got %q %q %q", team, bundle, auth)
+	info := p.Codesign(ProcessInfo{BinaryPath: `C:\nonexistent\binary.exe`})
+	if info.TeamID != "" || info.BundleIdentifier != "" || info.AuthorityLeaf != "" {
+		t.Fatalf("expected empty fields for nonexistent path, got %q %q %q",
+			info.TeamID, info.BundleIdentifier, info.AuthorityLeaf)
 	}
 }
 
 func TestWindowsPlatform_CodesignEmptyPath(t *testing.T) {
 	p := windowsPlatform{}
-	team, bundle, auth := p.Codesign("")
-	if team != "" || bundle != "" || auth != "" {
-		t.Fatalf("expected empty fields for empty path, got %q %q %q", team, bundle, auth)
+	info := p.Codesign(ProcessInfo{BinaryPath: ""})
+	if info.TeamID != "" || info.BundleIdentifier != "" || info.AuthorityLeaf != "" {
+		t.Fatalf("expected empty fields for empty path, got %q %q %q",
+			info.TeamID, info.BundleIdentifier, info.AuthorityLeaf)
 	}
 }

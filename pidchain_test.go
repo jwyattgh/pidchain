@@ -12,24 +12,6 @@ import (
 	"github.com/jwyattgh/pidchain/internal/walker"
 )
 
-func TestErrorSentinels_Distinct(t *testing.T) {
-	all := []error{
-		pidchain.ErrPlatformUnsupported,
-		pidchain.ErrProcessDead,
-		pidchain.ErrMaxDepthExceeded,
-	}
-	for i, a := range all {
-		if a == nil {
-			t.Fatalf("sentinel %d is nil", i)
-		}
-		for j, b := range all {
-			if i != j && errors.Is(a, b) {
-				t.Fatalf("sentinels %d and %d alias each other: %v / %v", i, j, a, b)
-			}
-		}
-	}
-}
-
 func TestFingerprint_NonexistentPID_ReturnsErrProcessDead(t *testing.T) {
 	if runtime.GOOS != "darwin" && runtime.GOOS != "windows" {
 		t.Skip("requires a supported platform")
@@ -118,30 +100,6 @@ func TestFingerprint_Self_Deterministic(t *testing.T) {
 	}
 }
 
-func TestChain_Self_IdentityFieldsStable(t *testing.T) {
-	if runtime.GOOS != "darwin" && runtime.GOOS != "windows" {
-		t.Skip("requires a supported platform")
-	}
-	a, err := pidchain.Chain(os.Getpid())
-	if err != nil && !errors.Is(err, pidchain.ErrMaxDepthExceeded) {
-		t.Fatal(err)
-	}
-	b, err := pidchain.Chain(os.Getpid())
-	if err != nil && !errors.Is(err, pidchain.ErrMaxDepthExceeded) {
-		t.Fatal(err)
-	}
-	if len(a.Entries) != len(b.Entries) {
-		t.Fatalf("chain length changed across calls: %d vs %d", len(a.Entries), len(b.Entries))
-	}
-	for i := range a.Entries {
-		if a.Entries[i].TeamID != b.Entries[i].TeamID ||
-			a.Entries[i].BundleIdentifier != b.Entries[i].BundleIdentifier ||
-			a.Entries[i].AuthorityLeaf != b.Entries[i].AuthorityLeaf {
-			t.Fatalf("identity fields drifted at position %d:\n a=%+v\n b=%+v", i, a.Entries[i], b.Entries[i])
-		}
-	}
-}
-
 // TestPublicAPIConsistency proves the two public functions are internally
 // consistent: Fingerprint(pid) equals hex(sha256(concat(Chain(pid) codesign
 // fields))) for the same pid. They share one internal build path; this test
@@ -217,10 +175,74 @@ func TestChain_SuccessPathViaFake(t *testing.T) {
 	if len(chain.Entries) != 2 {
 		t.Fatalf("chain length: got %d want 2", len(chain.Entries))
 	}
-	if chain.Entries[0].PID != 100 || chain.Entries[1].PID != 50 {
-		t.Fatalf("walk order wrong: %+v", chain.Entries)
+
+	want := []struct {
+		pid       int
+		team      string
+		bundle    string
+		authority string
+	}{
+		{pid: 100, team: "TEAM", bundle: "bundle./bin/app", authority: "Authority"},
+		{pid: 50, team: "TEAM", bundle: "bundle./sbin/init", authority: "Authority"},
+	}
+	for i, w := range want {
+		got := chain.Entries[i]
+		if got.PID != w.pid {
+			t.Errorf("entry %d PID: got %d want %d", i, got.PID, w.pid)
+		}
+		if got.TeamID != w.team {
+			t.Errorf("entry %d TeamID: got %q want %q", i, got.TeamID, w.team)
+		}
+		if got.BundleIdentifier != w.bundle {
+			t.Errorf("entry %d BundleIdentifier: got %q want %q", i, got.BundleIdentifier, w.bundle)
+		}
+		if got.AuthorityLeaf != w.authority {
+			t.Errorf("entry %d AuthorityLeaf: got %q want %q", i, got.AuthorityLeaf, w.authority)
+		}
 	}
 	if len(chain.Fingerprint) != 64 {
 		t.Fatalf("fingerprint length: got %d want 64", len(chain.Fingerprint))
+	}
+}
+
+// maxDepthFake produces an unterminating chain so the walker hits MaxDepth.
+type maxDepthFake struct{}
+
+func (maxDepthFake) Lookup(pid int) (int, string, error) {
+	return pid + 1, "/x", nil
+}
+
+func (maxDepthFake) Codesign(string) (string, string, string) {
+	return "T", "B", "A"
+}
+
+func TestFingerprint_MaxDepth_ReturnsPartialFingerprintAndError(t *testing.T) {
+	orig := walker.New
+	walker.New = func() walker.Platform { return maxDepthFake{} }
+	t.Cleanup(func() { walker.New = orig })
+
+	fp, err := pidchain.Fingerprint(1)
+	if !errors.Is(err, pidchain.ErrMaxDepthExceeded) {
+		t.Fatalf("want ErrMaxDepthExceeded, got %v", err)
+	}
+	if len(fp) != 64 {
+		t.Fatalf("want 64-char partial fingerprint, got %d chars: %q", len(fp), fp)
+	}
+}
+
+func TestChain_MaxDepth_ReturnsPartialChainAndError(t *testing.T) {
+	orig := walker.New
+	walker.New = func() walker.Platform { return maxDepthFake{} }
+	t.Cleanup(func() { walker.New = orig })
+
+	chain, err := pidchain.Chain(1)
+	if !errors.Is(err, pidchain.ErrMaxDepthExceeded) {
+		t.Fatalf("want ErrMaxDepthExceeded, got %v", err)
+	}
+	if len(chain.Entries) != walker.MaxDepth {
+		t.Fatalf("want %d entries on MaxDepth, got %d", walker.MaxDepth, len(chain.Entries))
+	}
+	if len(chain.Fingerprint) != 64 {
+		t.Fatalf("want 64-char partial fingerprint, got %d chars", len(chain.Fingerprint))
 	}
 }

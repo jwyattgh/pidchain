@@ -1,8 +1,4 @@
-// Package types holds the canonical declarations of the data and error
-// types used by both the public pidchain package and internal/walker.
-// Centralizing them removes the parallel declarations that previously
-// existed in both packages.
-package types
+package walker
 
 import "errors"
 

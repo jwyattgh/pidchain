@@ -129,8 +129,6 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
-
-	"github.com/jwyattgh/pidchain/internal/types"
 )
 
 func init() {
@@ -148,21 +146,21 @@ type windowsPlatform struct{}
 func (windowsPlatform) Lookup(pid int) (int, string, error) {
 	snap, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
 	if err != nil {
-		return 0, "", types.ErrProcessDead
+		return 0, "", ErrProcessDead
 	}
 	defer windows.CloseHandle(snap)
 
 	var entry windows.ProcessEntry32
 	entry.Size = uint32(unsafe.Sizeof(entry))
 	if err := windows.Process32First(snap, &entry); err != nil {
-		return 0, "", types.ErrProcessDead
+		return 0, "", ErrProcessDead
 	}
 	for {
 		if entry.ProcessID == uint32(pid) {
 			return int(entry.ParentProcessID), fullImagePath(pid), nil
 		}
 		if err := windows.Process32Next(snap, &entry); err != nil {
-			return 0, "", types.ErrProcessDead
+			return 0, "", ErrProcessDead
 		}
 	}
 }

@@ -2,8 +2,6 @@
 
 package walker
 
-import "github.com/jwyattgh/pidchain/internal/types"
-
 func init() {
 	New = func() Platform { return unsupportedPlatform{} }
 }
@@ -11,7 +9,7 @@ func init() {
 type unsupportedPlatform struct{}
 
 func (unsupportedPlatform) Lookup(int) (int, string, error) {
-	return 0, "", types.ErrPlatformUnsupported
+	return 0, "", ErrPlatformUnsupported
 }
 
 func (unsupportedPlatform) Codesign(string) (string, string, string) {

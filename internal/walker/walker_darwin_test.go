@@ -6,8 +6,6 @@ import (
 	"errors"
 	"os"
 	"testing"
-
-	"github.com/jwyattgh/pidchain/internal/types"
 )
 
 func TestDarwinPlatform_NewReturnsDarwinPlatform(t *testing.T) {
@@ -85,7 +83,7 @@ func TestDarwinPlatform_LookupKernelTerminator(t *testing.T) {
 	}
 	p := darwinPlatform{}
 	_, _, err := p.Lookup(1)
-	if !errors.Is(err, types.ErrProcessDead) {
+	if !errors.Is(err, ErrProcessDead) {
 		t.Fatalf("want ErrProcessDead from unprivileged Lookup(1), got %v", err)
 	}
 }

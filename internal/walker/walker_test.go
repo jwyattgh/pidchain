@@ -3,8 +3,6 @@ package walker
 import (
 	"errors"
 	"testing"
-
-	"github.com/jwyattgh/pidchain/internal/types"
 )
 
 // fakePlatform is a test double satisfying Platform. Lookups and codesign
@@ -31,7 +29,7 @@ func (f *fakePlatform) Lookup(pid int) (int, string, error) {
 	if l, ok := f.lookups[pid]; ok {
 		return l.parentPID, l.binaryPath, nil
 	}
-	return 0, "", types.ErrProcessDead
+	return 0, "", ErrProcessDead
 }
 
 func (f *fakePlatform) Codesign(path string) (string, string, string) {
@@ -82,11 +80,11 @@ func TestWalk_LinearChainTerminatesAtPID1(t *testing.T) {
 }
 
 func TestWalk_StartPIDDeadReturnsErrProcessDead(t *testing.T) {
-	fake := &fakePlatform{lookupErr: map[int]error{42: types.ErrProcessDead}}
+	fake := &fakePlatform{lookupErr: map[int]error{42: ErrProcessDead}}
 	withPlatform(t, fake)
 
 	chain, err := Walk(42)
-	if !errors.Is(err, types.ErrProcessDead) {
+	if !errors.Is(err, ErrProcessDead) {
 		t.Fatalf("want ErrProcessDead, got %v", err)
 	}
 	if chain.Entries != nil {
@@ -98,11 +96,11 @@ func TestWalk_StartPIDDeadReturnsErrProcessDead(t *testing.T) {
 }
 
 func TestWalk_StartPIDPlatformUnsupportedSurfaces(t *testing.T) {
-	fake := &fakePlatform{lookupErr: map[int]error{7: types.ErrPlatformUnsupported}}
+	fake := &fakePlatform{lookupErr: map[int]error{7: ErrPlatformUnsupported}}
 	withPlatform(t, fake)
 
 	chain, err := Walk(7)
-	if !errors.Is(err, types.ErrPlatformUnsupported) {
+	if !errors.Is(err, ErrPlatformUnsupported) {
 		t.Fatalf("want ErrPlatformUnsupported, got %v", err)
 	}
 	if chain.Entries != nil {
@@ -116,7 +114,7 @@ func TestWalk_StartPIDPlatformUnsupportedSurfaces(t *testing.T) {
 func TestWalk_AncestorDeadReturnsPartialChainNoError(t *testing.T) {
 	fake := &fakePlatform{
 		lookups:   map[int]lookupResult{10: {parentPID: 5, binaryPath: "/a"}},
-		lookupErr: map[int]error{5: types.ErrProcessDead},
+		lookupErr: map[int]error{5: ErrProcessDead},
 	}
 	withPlatform(t, fake)
 
@@ -156,7 +154,7 @@ func TestWalk_MaxDepthExceeded(t *testing.T) {
 	withPlatform(t, fake)
 
 	chain, err := Walk(1000)
-	if !errors.Is(err, types.ErrMaxDepthExceeded) {
+	if !errors.Is(err, ErrMaxDepthExceeded) {
 		t.Fatalf("want ErrMaxDepthExceeded, got %v", err)
 	}
 	if len(chain.Entries) != MaxDepth {
@@ -176,7 +174,7 @@ func TestWalk_KernelTerminatorReachedMidwalk(t *testing.T) {
 			500: {parentPID: 200, binaryPath: "/leaf"},
 			200: {parentPID: 1, binaryPath: "/middle"},
 		},
-		lookupErr: map[int]error{1: types.ErrProcessDead},
+		lookupErr: map[int]error{1: ErrProcessDead},
 	}
 	withPlatform(t, fake)
 

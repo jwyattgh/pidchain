@@ -7,8 +7,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-
-	"github.com/jwyattgh/pidchain/internal/types"
 )
 
 // MaxDepth caps the chain length to bound runtime on pathological trees and
@@ -43,9 +41,9 @@ var New func() Platform
 //   - (chain, nil) otherwise. A mid-walk lookup failure (ancestor exited,
 //     kernel terminator reached) stops the walk and returns the partial
 //     chain, with its fingerprint, without an error.
-func Walk(startPID int) (types.ProcessChain, error) {
+func Walk(startPID int) (ProcessChain, error) {
 	p := New()
-	result := types.ProcessChain{Entries: make([]types.ProcessInfo, 0, 8)}
+	result := ProcessChain{Entries: make([]ProcessInfo, 0, 8)}
 	h := sha256.New()
 	current := startPID
 
@@ -53,10 +51,10 @@ func Walk(startPID int) (types.ProcessChain, error) {
 		ppid, path, err := p.Lookup(current)
 		if err != nil {
 			if len(result.Entries) == 0 {
-				if errors.Is(err, types.ErrPlatformUnsupported) {
-					return types.ProcessChain{}, types.ErrPlatformUnsupported
+				if errors.Is(err, ErrPlatformUnsupported) {
+					return ProcessChain{}, ErrPlatformUnsupported
 				}
-				return types.ProcessChain{}, types.ErrProcessDead
+				return ProcessChain{}, ErrProcessDead
 			}
 			// Mid-walk lookup failure (kernel terminator, dead ancestor):
 			// stop and return what we have. Not an error.
@@ -65,7 +63,7 @@ func Walk(startPID int) (types.ProcessChain, error) {
 		}
 
 		teamID, bundleID, authority := p.Codesign(path)
-		result.Entries = append(result.Entries, types.ProcessInfo{
+		result.Entries = append(result.Entries, ProcessInfo{
 			PID:              current,
 			ParentPID:        ppid,
 			BinaryPath:       path,
@@ -85,5 +83,5 @@ func Walk(startPID int) (types.ProcessChain, error) {
 	}
 
 	result.Fingerprint = hex.EncodeToString(h.Sum(nil))
-	return result, types.ErrMaxDepthExceeded
+	return result, ErrMaxDepthExceeded
 }

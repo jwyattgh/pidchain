@@ -4,16 +4,15 @@
 package pidchain
 
 import (
-	"github.com/jwyattgh/pidchain/internal/types"
 	"github.com/jwyattgh/pidchain/internal/walker"
 )
 
-// Error sentinels re-exported from internal/types so consumers can write
+// Error sentinels re-exported from internal/walker so consumers can write
 // errors.Is(err, pidchain.ErrProcessDead).
 var (
-	ErrPlatformUnsupported = types.ErrPlatformUnsupported
-	ErrProcessDead         = types.ErrProcessDead
-	ErrMaxDepthExceeded    = types.ErrMaxDepthExceeded
+	ErrPlatformUnsupported = walker.ErrPlatformUnsupported
+	ErrProcessDead         = walker.ErrProcessDead
+	ErrMaxDepthExceeded    = walker.ErrMaxDepthExceeded
 )
 
 // Fingerprint returns a lowercase hex SHA256 over the code-signing
@@ -37,6 +36,6 @@ func Fingerprint(pid int) (string, error) {
 //
 // On ErrMaxDepthExceeded the returned chain holds the 32 successfully
 // walked entries plus their fingerprint.
-func Chain(pid int) (types.ProcessChain, error) {
+func Chain(pid int) (walker.ProcessChain, error) {
 	return walker.Walk(pid)
 }

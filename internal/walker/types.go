@@ -13,8 +13,7 @@ type ProcessInfo struct {
 }
 
 // ProcessChain is the walked ancestry plus the SHA256 fingerprint over
-// every entry's code-signing identity. Walker populates both fields in a
-// single pass; pidchain.Fingerprint and pidchain.Chain each project one.
+// every entry's code-signing identity.
 type ProcessChain struct {
 	Entries     []ProcessInfo
 	Fingerprint string
@@ -25,5 +24,4 @@ type ProcessChain struct {
 var (
 	ErrPlatformUnsupported = errors.New("pidchain: platform not supported")
 	ErrProcessDead         = errors.New("pidchain: process not found")
-	ErrMaxDepthExceeded    = errors.New("pidchain: walk exceeded max depth")
 )

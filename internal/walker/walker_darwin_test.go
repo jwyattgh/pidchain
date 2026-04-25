@@ -3,8 +3,11 @@
 package walker
 
 import (
+	"errors"
 	"os"
 	"testing"
+
+	"github.com/jwyattgh/pidchain/internal/types"
 )
 
 func TestDarwinPlatform_NewReturnsDarwinPlatform(t *testing.T) {
@@ -68,6 +71,22 @@ func TestDarwinPlatform_LookupNonexistent(t *testing.T) {
 	_, _, err := p.Lookup(999999)
 	if err == nil {
 		t.Fatal("expected error for nonexistent PID, got nil")
+	}
+}
+
+// TestDarwinPlatform_LookupKernelTerminator exercises the proc_pidinfo
+// failure branch of Lookup. On macOS, an unprivileged caller's
+// proc_pidpath(1) succeeds (returns "/sbin/launchd") but proc_pidinfo
+// returns 0 because it can't read another process's bsdinfo without
+// privilege. Skips when running as root.
+func TestDarwinPlatform_LookupKernelTerminator(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root; proc_pidinfo(1) succeeds and the failure branch isn't exercised")
+	}
+	p := darwinPlatform{}
+	_, _, err := p.Lookup(1)
+	if !errors.Is(err, types.ErrProcessDead) {
+		t.Fatalf("want ErrProcessDead from unprivileged Lookup(1), got %v", err)
 	}
 }
 

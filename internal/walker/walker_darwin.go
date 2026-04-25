@@ -84,7 +84,11 @@ static int pidchain_codesign(const char* path,
 */
 import "C"
 
-import "unsafe"
+import (
+	"unsafe"
+
+	"github.com/jwyattgh/pidchain/internal/types"
+)
 
 func init() {
 	New = func() Platform { return darwinPlatform{} }
@@ -100,7 +104,7 @@ func (darwinPlatform) Lookup(pid int) (int, string, error) {
 	pathBuf := make([]byte, C.PROC_PIDPATHINFO_MAXSIZE)
 	pathRet := C.proc_pidpath(C.int(pid), unsafe.Pointer(&pathBuf[0]), C.uint32_t(len(pathBuf)))
 	if pathRet <= 0 {
-		return 0, "", ErrProcessDead
+		return 0, "", types.ErrProcessDead
 	}
 	path := C.GoString((*C.char)(unsafe.Pointer(&pathBuf[0])))
 
@@ -108,7 +112,7 @@ func (darwinPlatform) Lookup(pid int) (int, string, error) {
 	bsdSize := C.int(unsafe.Sizeof(bsd))
 	bsdRet := C.proc_pidinfo(C.int(pid), C.PROC_PIDTBSDINFO, 0, unsafe.Pointer(&bsd), bsdSize)
 	if bsdRet <= 0 || bsdRet < bsdSize {
-		return 0, "", ErrProcessDead
+		return 0, "", types.ErrProcessDead
 	}
 	return int(bsd.pbi_ppid), path, nil
 }

@@ -1,31 +1,19 @@
 // Package walker walks a process's ancestry and collects per-ancestor
-// codesign identity. The Walk function and Entry type are platform-neutral;
-// the per-OS Platform implementation lives in walker_<goos>.go.
+// codesign identity. The Walk function is platform-neutral; the per-OS
+// Platform implementation lives in walker_<goos>.go.
 package walker
 
-import "errors"
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+
+	"github.com/jwyattgh/pidchain/internal/types"
+)
 
 // MaxDepth caps the chain length to bound runtime on pathological trees and
 // to bound the canonical-bytes size that downstream code hashes.
 const MaxDepth = 32
-
-// Internal sentinels. The root pidchain package translates these to its
-// public sentinels; consumers never see walker errors directly.
-var (
-	ErrPlatformUnsupported = errors.New("walker: platform not supported")
-	ErrProcessDead         = errors.New("walker: process not found")
-	ErrMaxDepthExceeded    = errors.New("walker: walk exceeded max depth")
-)
-
-// Entry is one ancestor's kernel-attested identity plus its codesign data.
-type Entry struct {
-	PID              int
-	ParentPID        int
-	BinaryPath       string
-	TeamID           string
-	BundleIdentifier string
-	AuthorityLeaf    string
-}
 
 // Platform is the per-OS primitive surface used by Walk. Lookup returns the
 // kernel-attested parent PID and binary path for pid; Codesign returns the
@@ -41,37 +29,43 @@ type Platform interface {
 // implementation. Tests may swap it for a fake.
 var New func() Platform
 
-// Walk runs the walker from startPID toward the kernel terminator.
+// Walk runs the walker from startPID toward the kernel terminator and
+// returns the chain together with a SHA256 fingerprint over every entry's
+// code-signing identity (TeamID + BundleIdentifier + AuthorityLeaf, in walk
+// order, hex-encoded lowercase).
 //
 // Returns:
-//   - (nil, ErrPlatformUnsupported) if the active platform is unsupported.
-//   - (nil, ErrProcessDead) if startPID itself cannot be looked up.
+//   - (zero, ErrPlatformUnsupported) if the active platform is unsupported.
+//   - (zero, ErrProcessDead) if startPID itself cannot be looked up.
 //   - (chain, ErrMaxDepthExceeded) if the walk hits MaxDepth before
-//     terminating; the chain holds MaxDepth entries.
+//     terminating; the chain holds MaxDepth entries and a fingerprint over
+//     them.
 //   - (chain, nil) otherwise. A mid-walk lookup failure (ancestor exited,
 //     kernel terminator reached) stops the walk and returns the partial
-//     chain without an error.
-func Walk(startPID int) ([]Entry, error) {
+//     chain, with its fingerprint, without an error.
+func Walk(startPID int) (types.ProcessChain, error) {
 	p := New()
-	chain := make([]Entry, 0, 8)
+	result := types.ProcessChain{Entries: make([]types.ProcessInfo, 0, 8)}
+	h := sha256.New()
 	current := startPID
 
-	for len(chain) < MaxDepth {
+	for len(result.Entries) < MaxDepth {
 		ppid, path, err := p.Lookup(current)
 		if err != nil {
-			if len(chain) == 0 {
-				if errors.Is(err, ErrPlatformUnsupported) {
-					return nil, ErrPlatformUnsupported
+			if len(result.Entries) == 0 {
+				if errors.Is(err, types.ErrPlatformUnsupported) {
+					return types.ProcessChain{}, types.ErrPlatformUnsupported
 				}
-				return nil, ErrProcessDead
+				return types.ProcessChain{}, types.ErrProcessDead
 			}
 			// Mid-walk lookup failure (kernel terminator, dead ancestor):
 			// stop and return what we have. Not an error.
-			return chain, nil
+			result.Fingerprint = hex.EncodeToString(h.Sum(nil))
+			return result, nil
 		}
 
 		teamID, bundleID, authority := p.Codesign(path)
-		chain = append(chain, Entry{
+		result.Entries = append(result.Entries, types.ProcessInfo{
 			PID:              current,
 			ParentPID:        ppid,
 			BinaryPath:       path,
@@ -79,12 +73,17 @@ func Walk(startPID int) ([]Entry, error) {
 			BundleIdentifier: bundleID,
 			AuthorityLeaf:    authority,
 		})
+		h.Write([]byte(teamID))
+		h.Write([]byte(bundleID))
+		h.Write([]byte(authority))
 
 		if ppid == 0 || current == 1 {
-			return chain, nil
+			result.Fingerprint = hex.EncodeToString(h.Sum(nil))
+			return result, nil
 		}
 		current = ppid
 	}
 
-	return chain, ErrMaxDepthExceeded
+	result.Fingerprint = hex.EncodeToString(h.Sum(nil))
+	return result, types.ErrMaxDepthExceeded
 }

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/jwyattgh/pidchain"
+	"github.com/jwyattgh/pidchain/internal/walker"
 )
 
 func TestErrorSentinels_Distinct(t *testing.T) {
@@ -47,8 +48,11 @@ func TestChain_NonexistentPID_ReturnsErrProcessDead(t *testing.T) {
 	if !errors.Is(err, pidchain.ErrProcessDead) {
 		t.Fatalf("want ErrProcessDead, got %v", err)
 	}
-	if chain != nil {
-		t.Fatalf("want nil chain, got %+v", chain)
+	if chain.Entries != nil {
+		t.Fatalf("want nil entries on error, got %+v", chain.Entries)
+	}
+	if chain.Fingerprint != "" {
+		t.Fatalf("want empty fingerprint on error, got %q", chain.Fingerprint)
 	}
 }
 
@@ -86,13 +90,13 @@ func TestChain_Self_Integration(t *testing.T) {
 	if err != nil && !errors.Is(err, pidchain.ErrMaxDepthExceeded) {
 		t.Fatalf("Chain(self): %v", err)
 	}
-	if len(chain) == 0 {
+	if len(chain.Entries) == 0 {
 		t.Fatal("expected non-empty chain for self")
 	}
-	if chain[0].PID != os.Getpid() {
-		t.Fatalf("first entry PID: got %d want %d", chain[0].PID, os.Getpid())
+	if chain.Entries[0].PID != os.Getpid() {
+		t.Fatalf("first entry PID: got %d want %d", chain.Entries[0].PID, os.Getpid())
 	}
-	if chain[0].BinaryPath == "" {
+	if chain.Entries[0].BinaryPath == "" {
 		t.Fatal("first entry BinaryPath should be non-empty (kernel-attested)")
 	}
 }
@@ -126,14 +130,14 @@ func TestChain_Self_IdentityFieldsStable(t *testing.T) {
 	if err != nil && !errors.Is(err, pidchain.ErrMaxDepthExceeded) {
 		t.Fatal(err)
 	}
-	if len(a) != len(b) {
-		t.Fatalf("chain length changed across calls: %d vs %d", len(a), len(b))
+	if len(a.Entries) != len(b.Entries) {
+		t.Fatalf("chain length changed across calls: %d vs %d", len(a.Entries), len(b.Entries))
 	}
-	for i := range a {
-		if a[i].TeamID != b[i].TeamID ||
-			a[i].BundleIdentifier != b[i].BundleIdentifier ||
-			a[i].AuthorityLeaf != b[i].AuthorityLeaf {
-			t.Fatalf("identity fields drifted at position %d:\n a=%+v\n b=%+v", i, a[i], b[i])
+	for i := range a.Entries {
+		if a.Entries[i].TeamID != b.Entries[i].TeamID ||
+			a.Entries[i].BundleIdentifier != b.Entries[i].BundleIdentifier ||
+			a.Entries[i].AuthorityLeaf != b.Entries[i].AuthorityLeaf {
+			t.Fatalf("identity fields drifted at position %d:\n a=%+v\n b=%+v", i, a.Entries[i], b.Entries[i])
 		}
 	}
 }
@@ -156,7 +160,7 @@ func TestPublicAPIConsistency(t *testing.T) {
 	}
 
 	h := sha256.New()
-	for _, p := range chain {
+	for _, p := range chain.Entries {
 		h.Write([]byte(p.TeamID))
 		h.Write([]byte(p.BundleIdentifier))
 		h.Write([]byte(p.AuthorityLeaf))
@@ -165,5 +169,58 @@ func TestPublicAPIConsistency(t *testing.T) {
 
 	if fp != want {
 		t.Fatalf("Fingerprint != hex(sha256(concat(Chain fields))):\n  Fingerprint: %s\n  Computed:    %s", fp, want)
+	}
+}
+
+// simpleChainFake produces a short, well-terminated ancestry so tests can
+// drive Fingerprint and Chain through their full success-return paths on
+// every OS, including Linux where platform-specific integration tests skip.
+type simpleChainFake struct{}
+
+func (simpleChainFake) Lookup(pid int) (int, string, error) {
+	switch pid {
+	case 100:
+		return 50, "/bin/app", nil
+	case 50:
+		return 0, "/sbin/init", nil
+	}
+	return 0, "", pidchain.ErrProcessDead
+}
+
+func (simpleChainFake) Codesign(path string) (string, string, string) {
+	return "TEAM", "bundle." + path, "Authority"
+}
+
+func TestFingerprint_SuccessPathViaFake(t *testing.T) {
+	orig := walker.New
+	walker.New = func() walker.Platform { return simpleChainFake{} }
+	t.Cleanup(func() { walker.New = orig })
+
+	fp, err := pidchain.Fingerprint(100)
+	if err != nil {
+		t.Fatalf("Fingerprint: %v", err)
+	}
+	if len(fp) != 64 {
+		t.Fatalf("fingerprint length: got %d want 64", len(fp))
+	}
+}
+
+func TestChain_SuccessPathViaFake(t *testing.T) {
+	orig := walker.New
+	walker.New = func() walker.Platform { return simpleChainFake{} }
+	t.Cleanup(func() { walker.New = orig })
+
+	chain, err := pidchain.Chain(100)
+	if err != nil {
+		t.Fatalf("Chain: %v", err)
+	}
+	if len(chain.Entries) != 2 {
+		t.Fatalf("chain length: got %d want 2", len(chain.Entries))
+	}
+	if chain.Entries[0].PID != 100 || chain.Entries[1].PID != 50 {
+		t.Fatalf("walk order wrong: %+v", chain.Entries)
+	}
+	if len(chain.Fingerprint) != 64 {
+		t.Fatalf("fingerprint length: got %d want 64", len(chain.Fingerprint))
 	}
 }

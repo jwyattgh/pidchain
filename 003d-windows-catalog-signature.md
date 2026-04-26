@@ -1,58 +1,64 @@
-//go:build windows
+# 003d — Windows Codesign: Catalog-Signature Fallback
 
-package walker
+## Goal
 
-/*
+Extend `pidchain_authenticode` in `internal/walker/walker_windows.go` to handle catalog-signed binaries. Today the function only finds embedded Authenticode signatures; most Windows system binaries (notepad.exe, explorer.exe, svchost.exe, calc.exe, cmd.exe) carry their signatures in separate `.cat` files instead, and Codesign returns empty fields for them.
+
+After this change, Codesign extracts the same three identity strings (TeamID, BundleIdentifier, AuthorityLeaf) from catalog-signed binaries that it extracts from embedded-signed binaries.
+
+## Background
+
+The current `pidchain_authenticode` calls `CryptQueryObject` with `CERT_QUERY_CONTENT_FLAG_PKCS7_SIGNED_EMBED`, which returns failure for any binary without an inline PE signature. Diagnostic output from CI confirmed `notepad.exe` on the GitHub `windows-latest` runner produces diag code 2 (CryptQueryObject failed → no embedded signature).
+
+Catalog signing is the dominant signature format for Windows system binaries since Windows 10. The signature is stored in `C:\Windows\System32\CatRoot\<GUID>\*.cat` files, indexed by SHA1 hash of the signed file's PE-relevant content. The Crypt API exposes catalog signatures through:
+
+- `CryptCATAdminAcquireContext2` — open a handle to the catalog admin.
+- `CryptCATAdminCalcHashFromFileHandle2` — compute the file's catalog hash.
+- `CryptCATAdminEnumCatalogFromHash` — find the catalog file containing that hash.
+- `CryptCATCatalogInfoFromContext` — get the catalog file's path.
+- `CryptQueryObject` (re-used) on the catalog file path → standard PKCS#7 signer extraction.
+
+Once the catalog file is found, the same `CryptQueryObject` + `CryptMsgGetParam` + `CertFindCertificateInStore` + `extract_name_string` chain that handles embedded signatures works on the catalog file. The signer extracted from a catalog file is Microsoft (or whichever publisher signed the catalog), which is the same identity that signing the binary inline would have produced.
+
+The link library `wintrust.lib` is required (catalog admin functions live there). It must be added to the `#cgo LDFLAGS` line.
+
+## Files
+
+- CHANGE: `internal/walker/walker_windows.go`
+- CHANGE: `internal/walker/walker_windows_test.go`
+
+## Implementation
+
+### `internal/walker/walker_windows.go`
+
+**1. Update the `#cgo LDFLAGS` line.**
+
+Before:
+```c
+#cgo LDFLAGS: -lcrypt32
+```
+
+After:
+```c
 #cgo LDFLAGS: -lcrypt32 -lwintrust
+```
 
-#define UNICODE
-#define _UNICODE
-#include <windows.h>
-#include <wincrypt.h>
+**2. Add `mscat.h` to the includes.**
+
+Add after the existing `#include` lines:
+```c
 #include <mscat.h>
-#include <stdlib.h>
-#include <string.h>
+```
 
-// w_to_utf8 converts a malloc'd UTF-16 wide string to a malloc'd UTF-8
-// C string. Returns NULL on failure or empty input.
-static char* w_to_utf8(const wchar_t* w, int wlen) {
-    if (w == NULL || wlen <= 0) return NULL;
-    int needed = WideCharToMultiByte(CP_UTF8, 0, w, wlen, NULL, 0, NULL, NULL);
-    if (needed <= 0) return NULL;
-    char* buf = (char*)malloc((size_t)needed + 1);
-    if (!buf) return NULL;
-    int written = WideCharToMultiByte(CP_UTF8, 0, w, wlen, buf, needed, NULL, NULL);
-    if (written <= 0) {
-        free(buf);
-        return NULL;
-    }
-    buf[written] = 0;
-    return buf;
-}
+**3. Refactor `pidchain_authenticode` to extract the signer-from-PKCS7 logic into a reusable helper.**
 
-// extract_name_string runs the two-call CertGetNameStringW pattern (size,
-// then fill) for the given attribute OID and returns a malloc'd UTF-8 C
-// string. Returns NULL if the attribute isn't present.
-static char* extract_name_string(PCCERT_CONTEXT cert, DWORD flags, LPCSTR oid) {
-    DWORD size = CertGetNameStringW(cert, CERT_NAME_ATTR_TYPE, flags, (void*)oid, NULL, 0);
-    if (size <= 1) return NULL;
-    wchar_t* wbuf = (wchar_t*)malloc(sizeof(wchar_t) * size);
-    if (!wbuf) return NULL;
-    DWORD got = CertGetNameStringW(cert, CERT_NAME_ATTR_TYPE, flags, (void*)oid, wbuf, size);
-    if (got <= 1) {
-        free(wbuf);
-        return NULL;
-    }
-    char* out = w_to_utf8(wbuf, (int)got - 1);
-    free(wbuf);
-    return out;
-}
+The current function does three things in sequence: open file with CryptQueryObject, get signer info, look up signer cert. The signer-info-from-CryptMsg portion is needed for both embedded and catalog paths. Extract it into a helper:
 
+```c
 // extract_signer_from_msg pulls the three identity strings from an
 // HCRYPTMSG / HCERTSTORE pair. Used by both the embedded-signature path
 // and the catalog-signature path. Returns 0 on success, non-zero on
-// failure. On failure the out parameters are left untouched (the caller
-// initializes them to NULL).
+// failure. On failure the out parameters are NULL.
 static int extract_signer_from_msg(HCRYPTMSG msg,
                                    HCERTSTORE certStore,
                                    char** out_team,
@@ -90,7 +96,11 @@ static int extract_signer_from_msg(HCRYPTMSG msg,
     free(signerInfo);
     return result;
 }
+```
 
+**4. Add a catalog-lookup helper.**
+
+```c
 // find_catalog_file looks up the catalog file containing the signature
 // for the binary at path. On success, copies the catalog file path into
 // out_catalog (a wchar_t buffer of MAX_PATH wchar_t units) and returns 0.
@@ -112,9 +122,6 @@ static int find_catalog_file(const wchar_t* path, wchar_t* out_catalog) {
         }
     }
 
-    // Microsoft API quirk: CryptCATAdminCalcHashFromFileHandle2's size-probe
-    // call (NULL buffer) returns FALSE with ERROR_INSUFFICIENT_BUFFER and
-    // populates *hashSize. Don't gate on the BOOL return; gate on hashSize.
     DWORD hashSize = 0;
     CryptCATAdminCalcHashFromFileHandle2(hCatAdmin, hFile, &hashSize, NULL, 0);
     if (hashSize == 0) {
@@ -157,16 +164,11 @@ static int find_catalog_file(const wchar_t* path, wchar_t* out_catalog) {
     CryptCATAdminReleaseContext(hCatAdmin, 0);
     return result;
 }
+```
 
-// pidchain_authenticode extracts Subject O, Subject CN, and Issuer CN
-// from the Authenticode signature for the binary at path. Tries the
-// embedded-PE signature first; on failure (no embedded signature, common
-// for Windows system binaries since Windows 10), falls back to the
-// Windows catalog database. Returns 0 on success and writes malloc'd C
-// strings into the out parameters (any of which may be NULL if missing).
-// Returns non-zero on failure (no embedded and no catalog match, API
-// error); on failure all three out parameters are NULL. Caller must free
-// any non-NULL out string.
+**5. Rewrite `pidchain_authenticode` to try embedded first, then catalog.**
+
+```c
 static int pidchain_authenticode(const wchar_t* path,
                                  char** out_team,
                                  char** out_bundle,
@@ -215,14 +217,22 @@ static int pidchain_authenticode(const wchar_t* path,
     CertCloseStore(certStore, 0);
     return rc;
 }
+```
 
+Note the flag difference on the catalog path: `CERT_QUERY_CONTENT_FLAG_PKCS7_SIGNED` (not `_EMBED`) because the catalog file itself *is* a PKCS#7 file, not a PE with an embedded signature.
+
+**6. Update `pidchain_codesign_diag` to reflect the new behavior.**
+
+Add catalog-lookup outcomes to the diagnostic codes:
+
+```c
 // pidchain_codesign_diag returns a diagnostic code describing why
 // pidchain_authenticode would fail or succeed for the given path. Values:
 //   0  = embedded signature found and signer cert extracted
 //   1  = file does not exist or cannot be opened
 //   2  = no embedded signature; catalog lookup also failed
-//   3  = signer info unreadable on the catalog path
-//   4  = signer cert not found in store (embedded or catalog)
+//   3  = signer info unreadable
+//   4  = signer cert not found in store
 //   5  = catalog signature found and signer cert extracted (success)
 // Used only by tests to distinguish failure modes in CI logs.
 static int pidchain_codesign_diag(const wchar_t* path) {
@@ -244,9 +254,7 @@ static int pidchain_codesign_diag(const wchar_t* path) {
     if (ok) {
         char *t = NULL, *b = NULL, *a = NULL;
         int rc = extract_signer_from_msg(msg, certStore, &t, &b, &a);
-        if (t) free(t);
-        if (b) free(b);
-        if (a) free(a);
+        if (t) free(t); if (b) free(b); if (a) free(a);
         CryptMsgClose(msg);
         CertCloseStore(certStore, 0);
         if (rc == 0) return 0;
@@ -271,120 +279,71 @@ static int pidchain_codesign_diag(const wchar_t* path) {
 
     char *t = NULL, *b = NULL, *a = NULL;
     int rc = extract_signer_from_msg(msg, certStore, &t, &b, &a);
-    if (t) free(t);
-    if (b) free(b);
-    if (a) free(a);
+    if (t) free(t); if (b) free(b); if (a) free(a);
     CryptMsgClose(msg);
     CertCloseStore(certStore, 0);
     return rc == 0 ? 5 : 4;
 }
-*/
-import "C"
+```
 
-import (
-	"syscall"
-	"unsafe"
+The Go-side `Codesign` and `codesignDiag` wrappers do not change. They call the C functions through the same signatures.
 
-	"golang.org/x/sys/windows"
-)
+### `internal/walker/walker_windows_test.go`
 
-func init() {
-	New = func() Platform { return windowsPlatform{} }
-}
+Update `TestWindowsPlatform_CodesignSystemBinary` to accept both diag code 0 (embedded) and 5 (catalog) as success, and to fail on the unchanged failure codes:
 
-type windowsPlatform struct{}
+```go
+func TestWindowsPlatform_CodesignSystemBinary(t *testing.T) {
+	const path = `C:\Windows\System32\notepad.exe`
 
-// Lookup uses Toolhelp32 + OpenProcess (via golang.org/x/sys/windows, no
-// CGo) to resolve a PID's parent and binary path. Returns ErrProcessDead
-// on snapshot failure or PID not found. ERROR_ACCESS_DENIED on the
-// OpenProcess (SYSTEM-owned ancestors) yields an empty BinaryPath but
-// the parent PID is still returned — the walker will continue with an
-// empty-codesign entry, which is correct.
-func (windowsPlatform) Lookup(pid int) (int, string, error) {
-	snap, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
-	if err != nil {
-		return 0, "", ErrProcessDead
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("notepad.exe not present at %s: %v", path, err)
 	}
-	defer windows.CloseHandle(snap)
 
-	var entry windows.ProcessEntry32
-	entry.Size = uint32(unsafe.Sizeof(entry))
-	if err := windows.Process32First(snap, &entry); err != nil {
-		return 0, "", ErrProcessDead
-	}
-	for {
-		if entry.ProcessID == uint32(pid) {
-			return int(entry.ParentProcessID), fullImagePath(pid), nil
+	diag := codesignDiag(path)
+
+	p := windowsPlatform{}
+	info := p.Codesign(ProcessInfo{BinaryPath: path})
+
+	allEmpty := info.TeamID == "" && info.BundleIdentifier == "" && info.AuthorityLeaf == ""
+
+	switch diag {
+	case 0, 5:
+		if allEmpty {
+			t.Fatalf("diag reports success (%d) but Codesign returned empty fields: team=%q bundle=%q auth=%q",
+				diag, info.TeamID, info.BundleIdentifier, info.AuthorityLeaf)
 		}
-		if err := windows.Process32Next(snap, &entry); err != nil {
-			return 0, "", ErrProcessDead
-		}
+	case 1:
+		t.Fatalf("file disappeared between os.Stat and CGo call (race): %s", path)
+	case 2:
+		t.Fatalf("notepad.exe has no embedded Authenticode signature and no catalog match. diag=2")
+	case 3:
+		t.Fatalf("notepad.exe signer info is unreadable. diag=3")
+	case 4:
+		t.Fatalf("notepad.exe signer cert not found in store. diag=4")
+	default:
+		t.Fatalf("unknown diag code: %d", diag)
 	}
 }
+```
 
-// fullImagePath upgrades Toolhelp32's basename-only ExeFile to the full
-// path via OpenProcess + QueryFullProcessImageName. Returns "" on access
-// failure (SYSTEM-owned ancestors, gone processes) — empty BinaryPath
-// is a valid signal that codesign inspection should be skipped.
-func fullImagePath(pid int) string {
-	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
-	if err != nil {
-		return ""
-	}
-	defer windows.CloseHandle(h)
-	buf := make([]uint16, windows.MAX_PATH)
-	size := uint32(len(buf))
-	if err := windows.QueryFullProcessImageName(h, 0, &buf[0], &size); err != nil {
-		return ""
-	}
-	return syscall.UTF16ToString(buf[:size])
-}
+`TestWindowsPlatform_CodesignProbeSignedBinary` should now find populated fields on the first iteration (cmd.exe, the first candidate, is catalog-signed) and stop without skipping. No change to the test's logic is required, but the skip path will no longer trigger.
 
-// Codesign populates the three Authenticode fields on info via the Crypt
-// API in CGo. Returns info unchanged on any failure (unsigned binary,
-// missing path, API error). Codesign failure is never fatal: the ancestor
-// still belongs in the chain, just with empty identity fields.
-//
-// Field mapping (per spec):
-//   - Subject Organization (O)  -> TeamID
-//   - Subject Common Name (CN)  -> BundleIdentifier
-//   - Issuer Common Name (CN)   -> AuthorityLeaf
-func (windowsPlatform) Codesign(info ProcessInfo) ProcessInfo {
-	if info.BinaryPath == "" {
-		return info
-	}
-	wpath, err := syscall.UTF16PtrFromString(info.BinaryPath)
-	if err != nil {
-		return info
-	}
+## Success Criteria
 
-	var cTeam, cBundle, cAuth *C.char
-	rc := C.pidchain_authenticode((*C.wchar_t)(unsafe.Pointer(wpath)), &cTeam, &cBundle, &cAuth)
-	if rc != 0 {
-		return info
-	}
+1. `go build ./...` succeeds on Windows.
+2. `go test ./...` passes on Windows; `TestWindowsPlatform_CodesignSystemBinary` reports diag=5 with non-empty signing fields for notepad.exe.
+3. `TestWindowsPlatform_CodesignProbeSignedBinary` no longer skips on the GitHub Windows runner.
+4. `Fingerprint(pid)` and `Chain(pid)` on a Windows process whose ancestors include catalog-signed system binaries (svchost.exe, services.exe) now produce non-empty TeamID/BundleIdentifier/AuthorityLeaf fields for those entries.
+5. macOS and Linux behavior is unchanged. (The change is in walker_windows.go only.)
 
-	if cTeam != nil {
-		info.TeamID = C.GoString(cTeam)
-		C.free(unsafe.Pointer(cTeam))
-	}
-	if cBundle != nil {
-		info.BundleIdentifier = C.GoString(cBundle)
-		C.free(unsafe.Pointer(cBundle))
-	}
-	if cAuth != nil {
-		info.AuthorityLeaf = C.GoString(cAuth)
-		C.free(unsafe.Pointer(cAuth))
-	}
-	return info
-}
+## Out of Scope
 
-// codesignDiag exposes pidchain_codesign_diag's return code for tests.
-// Not part of the public Platform interface.
-func codesignDiag(path string) int {
-	wpath, err := syscall.UTF16PtrFromString(path)
-	if err != nil {
-		return -1
-	}
-	return int(C.pidchain_codesign_diag((*C.wchar_t)(unsafe.Pointer(wpath))))
-}
+- Reviewing the Crypt API memory-management correctness in the existing CGo (separate audit).
+- Adding tests for binaries outside `C:\Windows\System32\`.
+- Switching the embedded-signature path to use `WinVerifyTrust` (the alternative option discussed during review; this DR keeps embedded extraction unchanged).
+- Updating `walker_darwin.go` (out of scope for Windows-only fix).
+
+## Go Standards Compliance
+
+This refactor doesn't violate any Go standard. The Go side is unchanged; all changes are in the C portion of the CGo block. The C code follows the same allocation/free patterns the existing function uses.

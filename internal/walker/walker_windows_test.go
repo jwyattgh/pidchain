@@ -97,19 +97,19 @@ func TestWindowsPlatform_CodesignSystemBinary(t *testing.T) {
 	allEmpty := info.TeamID == "" && info.BundleIdentifier == "" && info.AuthorityLeaf == ""
 
 	switch diag {
-	case 0:
+	case 0, 5:
 		if allEmpty {
-			t.Fatalf("pidchain_codesign_diag reports success but Codesign returned empty fields: team=%q bundle=%q auth=%q",
-				info.TeamID, info.BundleIdentifier, info.AuthorityLeaf)
+			t.Fatalf("diag reports success (%d) but Codesign returned empty fields: team=%q bundle=%q auth=%q",
+				diag, info.TeamID, info.BundleIdentifier, info.AuthorityLeaf)
 		}
 	case 1:
 		t.Fatalf("file disappeared between os.Stat and CGo call (race): %s", path)
 	case 2:
-		t.Fatalf("notepad.exe has no embedded Authenticode signature (likely catalog-signed); pidchain.Codesign cannot extract identity from this binary on this Windows version. diag=2")
+		t.Fatalf("notepad.exe has no embedded Authenticode signature and no catalog match. diag=2")
 	case 3:
-		t.Fatalf("notepad.exe has an embedded signature but signer info is unreadable. diag=3")
+		t.Fatalf("notepad.exe signer info is unreadable. diag=3")
 	case 4:
-		t.Fatalf("notepad.exe signer info present but signer cert not found in embedded store. diag=4")
+		t.Fatalf("notepad.exe signer cert not found in store. diag=4")
 	default:
 		t.Fatalf("unknown diag code: %d", diag)
 	}

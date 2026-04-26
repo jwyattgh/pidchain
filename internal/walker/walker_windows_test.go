@@ -6,6 +6,7 @@ package walker
 #include <wchar.h>
 extern int pidchain_codesign_diag(const wchar_t* path);
 */
+import "C"
 
 import (
 	"os"

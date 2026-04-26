@@ -4,6 +4,7 @@ package walker
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -130,5 +131,43 @@ func TestWindowsPlatform_CodesignEmptyPath(t *testing.T) {
 	if info.TeamID != "" || info.BundleIdentifier != "" || info.AuthorityLeaf != "" {
 		t.Fatalf("expected empty fields for empty path, got %q %q %q",
 			info.TeamID, info.BundleIdentifier, info.AuthorityLeaf)
+	}
+}
+
+// TestWindowsPlatform_CodesignUnsignedExistingFile exercises the
+// catalog-no-match branch of pidchain_authenticode. The file exists on
+// disk (so CryptQueryObject can open it and CreateFileW for the catalog
+// hash succeeds), has no embedded Authenticode signature (it's not a PE),
+// and won't match any installed catalog. This drives the embedded-failure
+// path through find_catalog_file's success-through-hash-then-enum-fail
+// branch and back out via rc != 0.
+func TestWindowsPlatform_CodesignUnsignedExistingFile(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "unsigned.bin")
+	if err := os.WriteFile(path, []byte("not a binary"), 0o644); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+
+	p := windowsPlatform{}
+	info := p.Codesign(ProcessInfo{BinaryPath: path})
+	if info.TeamID != "" || info.BundleIdentifier != "" || info.AuthorityLeaf != "" {
+		t.Fatalf("expected empty fields for unsigned file, got %q %q %q",
+			info.TeamID, info.BundleIdentifier, info.AuthorityLeaf)
+	}
+}
+
+// TestWindowsPlatform_CodesignDiag_UnsignedExistingFile asserts that
+// pidchain_codesign_diag returns 2 (no embedded, no catalog) for a file
+// that exists but is unsigned. Distinguishes "file missing" (diag=1) from
+// "no signature found anywhere" (diag=2) explicitly.
+func TestWindowsPlatform_CodesignDiag_UnsignedExistingFile(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "unsigned.bin")
+	if err := os.WriteFile(path, []byte("not a binary"), 0o644); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+
+	if diag := codesignDiag(path); diag != 2 {
+		t.Fatalf("expected diag=2 (no embedded, no catalog), got %d", diag)
 	}
 }

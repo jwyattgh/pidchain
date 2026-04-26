@@ -65,17 +65,7 @@ jobs:
           echo "---"
           COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
           echo "Coverage on ${{ matrix.os }}: ${COVERAGE}%"
-          case "${{ matrix.os }}" in
-            macos-latest)
-              THRESHOLD=95
-              ;;
-            windows-latest)
-              THRESHOLD=95
-              ;;
-            ubuntu-latest)
-              THRESHOLD=91
-              ;;
-          esac
+          THRESHOLD=95
           # Use awk for floating-point comparison: bc isn't on the Windows
           # runner, and silently absent bc made the gate report success
           # regardless of the actual number. awk is preinstalled on every

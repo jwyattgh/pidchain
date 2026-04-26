@@ -121,6 +121,59 @@ static int pidchain_authenticode(const wchar_t* path,
     if (certStore) CertCloseStore(certStore, 0);
     return 0;
 }
+
+// pidchain_codesign_diag returns a diagnostic code describing why
+// pidchain_authenticode would fail or succeed for the given path. Values:
+//   0  = embedded signature found and signer cert extracted
+//   1  = file does not exist or cannot be opened
+//   2  = CryptQueryObject failed (no embedded signature — likely catalog-signed)
+//   3  = CryptMsgGetParam failed (signature present but signer info unreadable)
+//   4  = CertFindCertificateInStore failed (signer cert not in store)
+// Used only by tests to distinguish failure modes in CI logs.
+static int pidchain_codesign_diag(const wchar_t* path) {
+    DWORD attrs = GetFileAttributesW(path);
+    if (attrs == INVALID_FILE_ATTRIBUTES) return 1;
+
+    HCERTSTORE certStore = NULL;
+    HCRYPTMSG msg = NULL;
+    DWORD encoding = 0, contentType = 0, formatType = 0;
+
+    BOOL ok = CryptQueryObject(
+        CERT_QUERY_OBJECT_FILE, path,
+        CERT_QUERY_CONTENT_FLAG_PKCS7_SIGNED_EMBED,
+        CERT_QUERY_FORMAT_FLAG_BINARY,
+        0, &encoding, &contentType, &formatType,
+        &certStore, &msg, NULL);
+    if (!ok) return 2;
+
+    DWORD signerInfoSize = 0;
+    if (!CryptMsgGetParam(msg, CMSG_SIGNER_INFO_PARAM, 0, NULL, &signerInfoSize) || signerInfoSize == 0) {
+        if (msg) CryptMsgClose(msg);
+        if (certStore) CertCloseStore(certStore, 0);
+        return 3;
+    }
+    PCMSG_SIGNER_INFO signerInfo = (PCMSG_SIGNER_INFO)malloc(signerInfoSize);
+    if (!signerInfo || !CryptMsgGetParam(msg, CMSG_SIGNER_INFO_PARAM, 0, signerInfo, &signerInfoSize)) {
+        if (signerInfo) free(signerInfo);
+        if (msg) CryptMsgClose(msg);
+        if (certStore) CertCloseStore(certStore, 0);
+        return 3;
+    }
+
+    CERT_INFO certInfo;
+    certInfo.Issuer = signerInfo->Issuer;
+    certInfo.SerialNumber = signerInfo->SerialNumber;
+    PCCERT_CONTEXT signerCert = CertFindCertificateInStore(
+        certStore, X509_ASN_ENCODING | PKCS_7_ASN_ENCODING, 0,
+        CERT_FIND_SUBJECT_CERT, &certInfo, NULL);
+
+    int result = signerCert ? 0 : 4;
+    if (signerCert) CertFreeCertificateContext(signerCert);
+    free(signerInfo);
+    if (msg) CryptMsgClose(msg);
+    if (certStore) CertCloseStore(certStore, 0);
+    return result;
+}
 */
 import "C"
 

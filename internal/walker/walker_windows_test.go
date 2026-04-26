@@ -83,6 +83,26 @@ func TestWindowsPlatform_LookupNonexistent(t *testing.T) {
 	}
 }
 
+// TestWindowsPlatform_LookupSystemProcess exercises fullImagePath's
+// OpenProcess-failure branch. PID 4 (System) always exists on Windows
+// and is unprivileged-inaccessible, so OpenProcess fails for a normal
+// caller and fullImagePath returns "". Lookup itself succeeds because
+// Toolhelp32 enumerates System without needing the OpenProcess handle.
+func TestWindowsPlatform_LookupSystemProcess(t *testing.T) {
+	p := windowsPlatform{}
+	_, path, err := p.Lookup(4)
+	if err != nil {
+		t.Fatalf("expected no error for System PID 4, got %v", err)
+	}
+	// Empty path is the documented signal that OpenProcess failed
+	// (SYSTEM-owned ancestor, unprivileged caller). If running as
+	// Administrator the path may be populated; either way exercises a
+	// real path through fullImagePath.
+	if path != "" {
+		t.Logf("running with elevated access; PID 4 path=%q", path)
+	}
+}
+
 func TestWindowsPlatform_CodesignSystemBinary(t *testing.T) {
 	const path = `C:\Windows\System32\notepad.exe`
 
@@ -169,5 +189,15 @@ func TestWindowsPlatform_CodesignDiag_UnsignedExistingFile(t *testing.T) {
 
 	if diag := codesignDiag(path); diag != 2 {
 		t.Fatalf("expected diag=2 (no embedded, no catalog), got %d", diag)
+	}
+}
+
+// TestWindowsPlatform_CodesignDiag_NullBytePath exercises codesignDiag's
+// UTF16PtrFromString error branch. A Go string with embedded null bytes
+// cannot round-trip to a null-terminated UTF-16 buffer, so codesignDiag
+// must return -1 without calling into CGo.
+func TestWindowsPlatform_CodesignDiag_NullBytePath(t *testing.T) {
+	if diag := codesignDiag("path\x00with\x00nulls"); diag != -1 {
+		t.Fatalf("expected diag=-1 from invalid UTF-16 path, got %d", diag)
 	}
 }

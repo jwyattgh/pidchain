@@ -274,3 +274,13 @@ func (windowsPlatform) Codesign(info ProcessInfo) ProcessInfo {
 	}
 	return info
 }
+
+// codesignDiag exposes pidchain_codesign_diag's return code for tests.
+// Not part of the public Platform interface.
+func codesignDiag(path string) int {
+	wpath, err := syscall.UTF16PtrFromString(path)
+	if err != nil {
+		return -1
+	}
+	return int(C.pidchain_codesign_diag((*C.wchar_t)(unsafe.Pointer(wpath))))
+}

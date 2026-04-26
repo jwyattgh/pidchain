@@ -2,17 +2,9 @@
 
 package walker
 
-/*
-#include <wchar.h>
-extern int pidchain_codesign_diag(const wchar_t* path);
-*/
-import "C"
-
 import (
 	"os"
-	"syscall"
 	"testing"
-	"unsafe"
 )
 
 func TestWindowsPlatform_NewReturnsWindowsPlatform(t *testing.T) {
@@ -97,11 +89,7 @@ func TestWindowsPlatform_CodesignSystemBinary(t *testing.T) {
 		t.Skipf("notepad.exe not present at %s: %v", path, err)
 	}
 
-	wpath, err := syscall.UTF16PtrFromString(path)
-	if err != nil {
-		t.Fatalf("UTF16PtrFromString: %v", err)
-	}
-	diag := int(C.pidchain_codesign_diag((*C.wchar_t)(unsafe.Pointer(wpath))))
+	diag := codesignDiag(path)
 
 	p := windowsPlatform{}
 	info := p.Codesign(ProcessInfo{BinaryPath: path})

@@ -71,7 +71,11 @@ jobs:
               THRESHOLD=91
               ;;
           esac
-          if (( $(echo "$COVERAGE < $THRESHOLD" | bc -l) )); then
+          # Use awk for floating-point comparison: bc isn't on the Windows
+          # runner, and silently absent bc made the gate report success
+          # regardless of the actual number. awk is preinstalled on every
+          # GitHub-hosted runner including windows-latest (Git Bash).
+          if awk -v cov="$COVERAGE" -v thr="$THRESHOLD" 'BEGIN { exit !(cov < thr) }'; then
             echo "::error::Coverage on ${{ matrix.os }} is ${COVERAGE}%, below threshold ${THRESHOLD}%"
             exit 1
           fi

@@ -58,6 +58,11 @@ jobs:
       - name: Coverage gate (per-OS)
         shell: bash
         run: |
+          # Per-function breakdown logged on every run so we can act on
+          # coverage drops without re-running CI in debug mode.
+          echo "Per-function coverage on ${{ matrix.os }}:"
+          go tool cover -func=coverage.out
+          echo "---"
           COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
           echo "Coverage on ${{ matrix.os }}: ${COVERAGE}%"
           case "${{ matrix.os }}" in

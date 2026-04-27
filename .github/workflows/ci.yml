@@ -20,6 +20,12 @@ jobs:
         os: [macos-latest, windows-latest, ubuntu-latest]
         go-version: ['1.25', '1.26']
     runs-on: ${{ matrix.os }}
+    # Cap chosen for runaway prevention. Longest observed: Windows Go 1.25
+    # at 5:19 (cold-cache CGo link, 2026-04-27). 15 minutes is ~3x headroom
+    # on that worst case — the standard runaway-prevention rule of thumb.
+    # Other jobs use the same value for consistency; they run in <1 minute
+    # but the cap is harmless when nothing's wrong.
+    timeout-minutes: 15
     permissions:
       contents: read
       id-token: write
@@ -86,6 +92,7 @@ jobs:
     name: Publish test results
     needs: test
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: always()
     permissions:
       contents: read
@@ -104,6 +111,7 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -122,6 +130,7 @@ jobs:
   security:
     name: Security scan
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       actions: read
@@ -163,6 +172,7 @@ jobs:
   vuln:
     name: Vulnerability scan
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:

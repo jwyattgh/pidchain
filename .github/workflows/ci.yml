@@ -24,9 +24,9 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version: ${{ matrix.go-version }}
           cache-dependency-path: go.sum
@@ -37,19 +37,16 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      - name: Install gotestsum
-        run: go install gotest.tools/gotestsum@latest
-
       - name: Test
         shell: bash
         run: |
-          gotestsum \
+          go tool gotestsum \
             --junitfile "junit-${{ matrix.os }}-${{ matrix.go-version }}.xml" \
             --format testname -- \
             -race -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: Upload JUnit results
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
           name: junit-${{ matrix.os }}-${{ matrix.go-version }}
@@ -78,7 +75,7 @@ jobs:
 
       - name: Upload coverage to Codecov
         if: matrix.go-version == '1.26'
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@75cd11691c0faa626561e295848008c8a7dddffe # v5
         with:
           use_oidc: true
           files: ./coverage.out
@@ -95,12 +92,12 @@ jobs:
       checks: write
       pull-requests: write
     steps:
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           pattern: junit-*
           merge-multiple: true
 
-      - uses: EnricoMi/publish-unit-test-result-action@v2
+      - uses: EnricoMi/publish-unit-test-result-action@c950f6fb443cb5af20a377fd0dfaa78838901040 # v2
         with:
           files: junit-*.xml
 
@@ -110,15 +107,15 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version: '1.26'
           cache-dependency-path: go.sum
 
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v9
+        uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9
         with:
           version: v2.6.2
 
@@ -130,10 +127,10 @@ jobs:
       actions: read
       security-events: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
 
       - name: Run gosec (produce SARIF)
-        uses: securego/gosec@v2.25.0
+        uses: securego/gosec@223e19b8856e00f02cc67804499a83f77e208f3c # v2.25.0
         continue-on-error: true
         with:
           args: '-fmt sarif -out gosec.sarif ./...'
@@ -143,7 +140,7 @@ jobs:
           always() &&
           hashFiles('gosec.sarif') != '' &&
           github.event.repository.private == false
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@95e58e9a2cdfd71adc6e0353d5c52f41a045d225 # v4
         with:
           sarif_file: gosec.sarif
 
@@ -169,14 +166,14 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version: '1.26'
           cache-dependency-path: go.sum
 
       - name: Run govulncheck
-        uses: golang/govulncheck-action@v1
+        uses: golang/govulncheck-action@b625fbe08f3bccbe446d94fbf87fcc875a4f50ee # v1
         with:
           go-version-input: '1.26'

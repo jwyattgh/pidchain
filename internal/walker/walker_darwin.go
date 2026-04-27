@@ -13,7 +13,8 @@ package walker
 #include <string.h>
 
 // cfstring_to_cstring copies a CFStringRef into a malloc'd UTF-8 C string.
-// Returns NULL on failure or empty input. Caller must free.
+// Returns NULL on failure or NULL input. An empty CFString returns a
+// malloc'd empty string ("\0"), not NULL. Caller must free.
 static char* cfstring_to_cstring(CFStringRef s) {
     if (s == NULL) return NULL;
     CFIndex len = CFStringGetLength(s);
@@ -66,6 +67,11 @@ static int pidchain_codesign(const char* path,
     CFStringRef bundle = (CFStringRef)CFDictionaryGetValue(info, kSecCodeInfoIdentifier);
     if (bundle) *out_bundle = cfstring_to_cstring(bundle);
 
+    // Leaf cert only by design: AuthorityLeaf commits to the immediate
+    // signer, not the full chain. cert[0] is the leaf; cert[N-1] is the
+    // root CA. The borrowed reference from CFArrayGetValueAtIndex is
+    // valid for as long as 'info' is retained, which is for the rest
+    // of this function.
     CFArrayRef certs = (CFArrayRef)CFDictionaryGetValue(info, kSecCodeInfoCertificates);
     if (certs && CFArrayGetCount(certs) > 0) {
         SecCertificateRef leaf = (SecCertificateRef)CFArrayGetValueAtIndex(certs, 0);

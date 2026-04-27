@@ -207,3 +207,46 @@ func TestChain_SuccessPathViaFake(t *testing.T) {
 		t.Fatalf("fingerprint length: got %d want 64", len(chain.Fingerprint))
 	}
 }
+
+// ExampleFingerprint demonstrates the typical server-side usage: obtain
+// the peer PID via a kernel-attested mechanism, derive the fingerprint,
+// compare against an ACL.
+func ExampleFingerprint() {
+	// In a real server, peerPID comes from the kernel — cmd.Process.Pid
+	// for a spawned child, LOCAL_PEERPID for a UDS peer, etc. Here we
+	// use the current process for illustration.
+	peerPID := os.Getpid()
+
+	fp, err := pidchain.Fingerprint(peerPID)
+	if err != nil {
+		// errors.Is(err, pidchain.ErrProcessDead),
+		// errors.Is(err, pidchain.ErrPlatformUnsupported)
+		_ = err
+		return
+	}
+
+	// fp is a 64-character lowercase hex SHA256.
+	_ = fp
+	// Output:
+}
+
+// ExampleChain demonstrates the diagnostic / pairing-prompt usage: get
+// the structured ancestor list to display to a human (or to log) before
+// committing to store the corresponding fingerprint.
+func ExampleChain() {
+	chain, err := pidchain.Chain(os.Getpid())
+	if err != nil {
+		_ = err
+		return
+	}
+
+	// chain.Entries is the ordered ancestry, queried PID first.
+	// chain.Fingerprint is the same value Fingerprint() would return.
+	for _, e := range chain.Entries {
+		_ = e.BinaryPath
+		_ = e.TeamID
+		_ = e.BundleIdentifier
+		_ = e.AuthorityLeaf
+	}
+	// Output:
+}

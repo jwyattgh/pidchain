@@ -15,23 +15,10 @@
 // rest. This addresses the cleartext-credential pattern described by
 // CWE-312, CWE-313, CWE-522, CWE-256, and CWE-922.
 //
-// # Supported platforms and IPC
+// # Supported platforms
 //
 // pidchain supports macOS and Windows. Linux and other platforms compile
 // but return ErrPlatformUnsupported at runtime.
-//
-// On a supported platform, pidchain applies wherever the kernel can
-// identify the process on the other end of a connection:
-//
-//   - stdio pipes between a parent process and a child it spawned; the
-//     consumer is the parent and already knows the child PID.
-//   - Unix domain sockets, queried via LOCAL_PEERPID on macOS.
-//   - Windows named pipes, queried via GetNamedPipeClientProcessId.
-//
-// pidchain does not apply to TCP loopback, HTTP over localhost, or any
-// other transport where the kernel does not identify the peer by PID.
-// For those connections, and for any remote caller, use mTLS or another
-// transport-layer mechanism.
 //
 // # Concurrency
 //

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/jwyattgh/pidchain/compare/v0.1.0...v0.2.0) (2026-04-28)
+
+
+### Features
+
+* **security:** add CodeQL, Scorecard, and Dependabot alerts ([27b15aa](https://github.com/jwyattgh/pidchain/commit/27b15aa5d60dab603eb8df61f4085cd1b09e2bc5))
+
 ## 0.1.0 (2026-04-28)
 
 

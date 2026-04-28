@@ -2,6 +2,10 @@
 
 Same-host IPC authentication without stored credentials.
 
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/jwyattgh/pidchain/badge)](https://scorecard.dev/viewer/?uri=github.com/jwyattgh/pidchain)
+
+Scorecard reports 7-8/10 by design: required-status-checks, required-reviews, and signed-commits are intentionally absent per the project's solo-maintainer + direct-push workflow (see [docs/archive/004f-post-public-security-review.md](docs/archive/004f-post-public-security-review.md)). The score reflects deliberate tradeoffs, not unaddressed gaps.
+
 ## The problem
 
 Local app-to-app authentication typically stores a bearer token — a secret the client keeps in a config file or a keychain entry and transmits to prove identity. Any process running as the same user can read that file and impersonate the client. This is the stored-credential pattern described by CWE-312, CWE-313, CWE-522, CWE-256, and CWE-922: the credential is stealable because it exists at rest.

@@ -2,22 +2,15 @@ package pidchain_test
 
 import (
 	"encoding/json"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/jwyattgh/pidchain"
 )
-
-type probeOutput struct {
-	Channel     string                `json:"channel"`
-	CallerPID   int                   `json:"caller_pid"`
-	Chain       pidchain.ProcessChain `json:"chain"`
-	Fingerprint string                `json:"fingerprint"`
-	ChainErr    string                `json:"chain_err,omitempty"`
-	FpErr       string                `json:"fingerprint_err,omitempty"`
-}
 
 func TestIntegration_Stdio_ProbeFingerprintsCaller(t *testing.T) {
 	if runtime.GOOS != "darwin" && runtime.GOOS != "windows" {
@@ -30,21 +23,15 @@ func TestIntegration_Stdio_ProbeFingerprintsCaller(t *testing.T) {
 	run2 := runProbe(t, probeBin)
 	run3 := runProbe(t, probeBin)
 
-	for i, r := range []probeOutput{run1, run2, run3} {
-		if r.ChainErr != "" {
-			t.Fatalf("run %d: probe reported Chain error: %s", i+1, r.ChainErr)
+	if b, err := json.MarshalIndent(redactChain(run1, filepath.Dir(probeBin)), "", "  "); err == nil {
+		t.Logf("chain:\n%s", b)
+	}
+
+	for i, c := range []pidchain.ProcessChain{run1, run2, run3} {
+		if len(c.Fingerprint) != 64 {
+			t.Fatalf("run %d: fingerprint length: got %d want 64", i+1, len(c.Fingerprint))
 		}
-		if r.FpErr != "" {
-			t.Fatalf("run %d: probe reported Fingerprint error: %s", i+1, r.FpErr)
-		}
-		if len(r.Fingerprint) != 64 {
-			t.Fatalf("run %d: fingerprint length: got %d want 64", i+1, len(r.Fingerprint))
-		}
-		if r.Fingerprint != r.Chain.Fingerprint {
-			t.Fatalf("run %d: pidchain.Fingerprint(pid)=%s differs from pidchain.Chain(pid).Fingerprint=%s",
-				i+1, r.Fingerprint, r.Chain.Fingerprint)
-		}
-		if len(r.Chain.Entries) == 0 {
+		if len(c.Entries) == 0 {
 			t.Fatalf("run %d: chain has no entries", i+1)
 		}
 	}
@@ -59,14 +46,14 @@ func TestIntegration_Stdio_ProbeFingerprintsCaller(t *testing.T) {
 	}
 
 	sawBundle := false
-	for _, e := range run1.Chain.Entries {
+	for _, e := range run1.Entries {
 		if e.BundleIdentifier != "" {
 			sawBundle = true
 			break
 		}
 	}
 	if !sawBundle {
-		t.Errorf("no entry has a non-empty BundleIdentifier; codesign path did not fire against any on-disk binary in the ancestry\n entries=%+v", run1.Chain.Entries)
+		t.Errorf("no entry has a non-empty BundleIdentifier; codesign path did not fire against any on-disk binary in the ancestry\n entries=%+v", run1.Entries)
 	}
 }
 
@@ -82,14 +69,13 @@ func buildProbe(t *testing.T) string {
 	return out
 }
 
-// runProbe executes the probe binary with --channel=stdio and decodes
-// its stdout as probeOutput. Any non-zero exit, stderr, or decode
-// failure fails the test. The probe is the spawned child; this test
-// process is the caller whose PID the probe will fingerprint via
-// os.Getppid().
-func runProbe(t *testing.T, probeBin string) probeOutput {
+// runProbe executes the probe binary and decodes its stdout as a
+// pidchain.ProcessChain. The probe calls pidchain.Chain(os.Getpid()),
+// so the returned chain is rooted at the probe binary itself and walks
+// up through this test process and its ancestors.
+func runProbe(t *testing.T, probeBin string) pidchain.ProcessChain {
 	t.Helper()
-	cmd := exec.Command(probeBin, "--channel=stdio")
+	cmd := exec.Command(probeBin)
 	stdout, err := cmd.Output()
 	if err != nil {
 		if ee, ok := err.(*exec.ExitError); ok {
@@ -97,11 +83,11 @@ func runProbe(t *testing.T, probeBin string) probeOutput {
 		}
 		t.Fatalf("probe run: %v", err)
 	}
-	var out probeOutput
-	if err := json.Unmarshal(stdout, &out); err != nil {
+	var chain pidchain.ProcessChain
+	if err := json.Unmarshal(stdout, &chain); err != nil {
 		t.Fatalf("decode probe stdout: %v\n stdout=%s", err, stdout)
 	}
-	return out
+	return chain
 }
 
 func exeSuffix() string {
@@ -109,4 +95,40 @@ func exeSuffix() string {
 		return ".exe"
 	}
 	return ""
+}
+
+// redactPath replaces host-specific path prefixes with stable
+// placeholders so the chain log can be shared without leaking
+// $HOME, $TMPDIR, or the test's per-run temp dir. Longest-match
+// first: the test's temp dir is typically a descendant of
+// os.TempDir().
+func redactPath(p, testTempDir string) string {
+	if p == "" {
+		return p
+	}
+	if testTempDir != "" && strings.HasPrefix(p, testTempDir) {
+		return "$TEMPDIR" + strings.TrimPrefix(p, testTempDir)
+	}
+	if td := os.TempDir(); td != "" && strings.HasPrefix(p, td) {
+		return "$TMPDIR" + strings.TrimPrefix(p, td)
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" && strings.HasPrefix(p, home) {
+		return "$HOME" + strings.TrimPrefix(p, home)
+	}
+	return p
+}
+
+// redactChain returns a copy of c with each entry's BinaryPath
+// run through redactPath. The original c is unchanged so the
+// existing assertions stay accurate against unredacted data.
+func redactChain(c pidchain.ProcessChain, testTempDir string) pidchain.ProcessChain {
+	out := pidchain.ProcessChain{
+		Entries:     make([]pidchain.ProcessInfo, len(c.Entries)),
+		Fingerprint: c.Fingerprint,
+	}
+	for i, e := range c.Entries {
+		e.BinaryPath = redactPath(e.BinaryPath, testTempDir)
+		out.Entries[i] = e
+	}
+	return out
 }

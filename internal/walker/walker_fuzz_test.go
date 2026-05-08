@@ -32,7 +32,8 @@ func FuzzComputeFingerprint(f *testing.F) {
 			t.Fatalf("length = %d, want 64", len(fp1))
 		}
 		for _, c := range fp1 {
-			if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			isHex := (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')
+			if !isHex {
 				t.Fatalf("non-hex char %q in %s", c, fp1)
 			}
 		}

@@ -10,6 +10,14 @@ linters:
     - unused
     - gocritic
     - revive
+  exclusions:
+    rules:
+      # gocritic >=2.7 produces dupSubExpr false positives on cgo-expanded
+      # call sites. The flagged lines have no == operator in user code.
+      - path: internal/walker/walker_darwin\.go$
+        linters:
+          - gocritic
+        text: dupSubExpr
 
 run:
   timeout: 5m

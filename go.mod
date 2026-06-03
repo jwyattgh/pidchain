@@ -4,7 +4,7 @@ go 1.25.0
 
 retract v0.1.0 // Use v0.1.1 or later
 
-require golang.org/x/sys v0.43.0
+require golang.org/x/sys v0.45.0
 
 require (
 	github.com/bitfield/gotestdox v0.2.2 // indirect

@@ -22,6 +22,15 @@ type Platform interface {
 	Codesign(info ProcessInfo) ProcessInfo
 }
 
+// startTimer is implemented by platforms that keep a dead parent's PID in
+// the child's record. Windows does this and later hands the PID to new
+// processes, so Walk checks that each parent started before its child.
+type startTimer interface {
+	// StartTime returns the process creation time in nanoseconds, or false
+	// if it cannot be read.
+	StartTime(pid int) (int64, bool)
+}
+
 // New is set in each walker_<goos>.go init() to the active platform
 // implementation. Tests may swap it for a fake.
 var New func() Platform
@@ -35,13 +44,18 @@ var New func() Platform
 //   - (zero, ErrProcessDead) if startPID itself cannot be looked up.
 //   - (chain, nil) on success. A mid-walk lookup failure (kernel terminator
 //     reached, ancestor exited) stops the walk and returns the partial
-//     chain without an error. So does a parent PID already in the chain,
-//     which Windows can report after PID reuse; without this stop the
-//     walk would loop forever.
+//     chain without an error. So does a parent that started after its
+//     child (on platforms that report start times), which means the
+//     child's real parent exited and its PID now names an unrelated
+//     process. A parent PID already in the chain also stops the walk, so a
+//     bad parent record can never loop it forever.
 func Walk(startPID int) (ProcessChain, error) {
 	p := New()                // platform: the active per-OS implementation
 	var entries []ProcessInfo // ordered list of ancestors, queried PID first
 	seen := map[int]bool{}    // PIDs already in entries; guards against parent cycles
+	st, _ := p.(startTimer)   // nil on platforms that never reuse a parent's PID
+	var childStart int64      // start time of the last entry added
+	childKnown := false       // whether childStart could be read
 	current := startPID
 
 	for {
@@ -51,6 +65,17 @@ func Walk(startPID int) (ProcessChain, error) {
 				return ProcessChain{}, classifyStartupErr(err)
 			}
 			return finalize(entries), nil
+		}
+
+		// Checked after Lookup so a parent that exits mid-walk is never
+		// replaced by whatever takes its PID before the check.
+		if st != nil {
+			start, ok := st.StartTime(current)
+			// A parent we can't prove is older than its child is not trusted.
+			if len(entries) > 0 && (!ok || !childKnown || start >= childStart) {
+				return finalize(entries), nil
+			}
+			childStart, childKnown = start, ok
 		}
 
 		entries = append(entries, p.Codesign(ProcessInfo{

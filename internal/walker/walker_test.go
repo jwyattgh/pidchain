@@ -170,9 +170,8 @@ func TestWalk_KernelTerminatorReachedMidwalk(t *testing.T) {
 }
 
 func TestWalk_ParentCycleStopsAtFirstRepeat(t *testing.T) {
-	// Models Windows PID reuse: 300's recorded parent exited and its PID
-	// was reused by a process whose own recorded parent is 300. Without a
-	// revisit guard the walk loops forever.
+	// A bad parent record pointing back into the chain. Without a revisit
+	// guard the walk loops forever.
 	fake := &fakePlatform{
 		lookups: map[int]lookupResult{
 			300: {parentPID: 400, binaryPath: "/leaf"},
@@ -207,5 +206,78 @@ func TestWalk_SelfParentStopsAfterOneEntry(t *testing.T) {
 	}
 	if len(chain.Entries) != 1 || chain.Entries[0].PID != 700 {
 		t.Fatalf("want [700], got %+v", chain.Entries)
+	}
+}
+
+// timedPlatform adds start times to fakePlatform, the way Windows reports
+// them. A PID missing from starts has an unreadable start time.
+type timedPlatform struct {
+	fakePlatform
+	starts map[int]int64
+}
+
+func (f *timedPlatform) StartTime(pid int) (int64, bool) {
+	t, ok := f.starts[pid]
+	return t, ok
+}
+
+func TestWalk_ParentStartedAfterChildIsDropped(t *testing.T) {
+	// 20's real parent exited and its PID 30 now names a newer process.
+	fake := &timedPlatform{
+		fakePlatform: fakePlatform{lookups: map[int]lookupResult{
+			20: {parentPID: 30, binaryPath: "/leaf"},
+			30: {parentPID: 1, binaryPath: "/impostor"},
+		}},
+		starts: map[int]int64{20: 100, 30: 200},
+	}
+	withPlatform(t, fake)
+
+	chain, err := Walk(20)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(chain.Entries) != 1 || chain.Entries[0].PID != 20 || chain.Entries[0].ParentPID != 30 {
+		t.Fatalf("want [20] keeping its recorded parent 30, got %+v", chain.Entries)
+	}
+}
+
+func TestWalk_ParentStartedBeforeChildIsKept(t *testing.T) {
+	fake := &timedPlatform{
+		fakePlatform: fakePlatform{lookups: map[int]lookupResult{
+			20: {parentPID: 30, binaryPath: "/leaf"},
+			30: {parentPID: 0, binaryPath: "/parent"},
+		}},
+		starts: map[int]int64{20: 200, 30: 100},
+	}
+	withPlatform(t, fake)
+
+	chain, err := Walk(20)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(chain.Entries) != 2 {
+		t.Fatalf("want [20 30], got %+v", chain.Entries)
+	}
+}
+
+func TestWalk_UnreadableStartTimeStopsWalk(t *testing.T) {
+	lookups := map[int]lookupResult{
+		20: {parentPID: 30, binaryPath: "/leaf"},
+		30: {parentPID: 0, binaryPath: "/parent"},
+	}
+	for name, starts := range map[string]map[int]int64{
+		"parent unreadable": {20: 200},
+		"child unreadable":  {30: 100},
+	} {
+		t.Run(name, func(t *testing.T) {
+			withPlatform(t, &timedPlatform{fakePlatform: fakePlatform{lookups: lookups}, starts: starts})
+			chain, err := Walk(20)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(chain.Entries) != 1 || chain.Entries[0].PID != 20 {
+				t.Fatalf("want [20], got %+v", chain.Entries)
+			}
+		})
 	}
 }

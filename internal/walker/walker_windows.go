@@ -388,3 +388,19 @@ func codesignDiag(path string) int {
 	}
 	return int(C.pidchain_codesign_diag((*C.wchar_t)(unsafe.Pointer(wpath))))
 }
+
+// StartTime returns pid's creation time. Windows keeps a dead parent's PID
+// in the child's snapshot record and reuses PIDs, so Walk uses this to
+// reject a "parent" that started after its child.
+func (windowsPlatform) StartTime(pid int) (int64, bool) {
+	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
+	if err != nil {
+		return 0, false
+	}
+	defer windows.CloseHandle(h)
+	var created, exited, kernel, user windows.Filetime
+	if err := windows.GetProcessTimes(h, &created, &exited, &kernel, &user); err != nil {
+		return 0, false
+	}
+	return created.Nanoseconds(), true
+}

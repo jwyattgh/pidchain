@@ -1,6 +1,7 @@
 package pidchain_test
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -8,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jwyattgh/pidchain"
 )
@@ -69,14 +71,25 @@ func buildProbe(t *testing.T) string {
 	return out
 }
 
+const probeTimeout = 60 * time.Second
+
 // runProbe executes the probe binary and decodes its stdout as a
 // pidchain.ProcessChain. The probe calls pidchain.Chain(os.Getpid()),
 // so the returned chain is rooted at the probe binary itself and walks
 // up through this test process and its ancestors.
 func runProbe(t *testing.T, probeBin string) pidchain.ProcessChain {
 	t.Helper()
-	cmd := exec.Command(probeBin)
+	// A healthy probe finishes in well under a second. The deadline turns a
+	// hung walk into a fast, named failure instead of the 10-minute
+	// package timeout.
+	ctx, cancel := context.WithTimeout(t.Context(), probeTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, probeBin)
+	cmd.WaitDelay = 5 * time.Second
 	stdout, err := cmd.Output()
+	if ctx.Err() != nil {
+		t.Fatalf("probe hung: no result within %s", probeTimeout)
+	}
 	if err != nil {
 		if ee, ok := err.(*exec.ExitError); ok {
 			t.Fatalf("probe exited %d: stderr=%s", ee.ExitCode(), ee.Stderr)

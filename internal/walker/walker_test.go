@@ -168,3 +168,44 @@ func TestWalk_KernelTerminatorReachedMidwalk(t *testing.T) {
 		t.Fatalf("want 2-entry partial chain (terminator excluded), got %d", len(chain.Entries))
 	}
 }
+
+func TestWalk_ParentCycleStopsAtFirstRepeat(t *testing.T) {
+	// Models Windows PID reuse: 300's recorded parent exited and its PID
+	// was reused by a process whose own recorded parent is 300. Without a
+	// revisit guard the walk loops forever.
+	fake := &fakePlatform{
+		lookups: map[int]lookupResult{
+			300: {parentPID: 400, binaryPath: "/leaf"},
+			400: {parentPID: 300, binaryPath: "/reused"},
+		},
+	}
+	withPlatform(t, fake)
+
+	chain, err := Walk(300)
+	if err != nil {
+		t.Fatalf("cycle should not be an error, got %v", err)
+	}
+	if len(chain.Entries) != 2 || chain.Entries[0].PID != 300 || chain.Entries[1].PID != 400 {
+		t.Fatalf("want [300 400], got %+v", chain.Entries)
+	}
+	if len(chain.Fingerprint) != 64 {
+		t.Fatalf("fingerprint length: got %d want 64", len(chain.Fingerprint))
+	}
+}
+
+func TestWalk_SelfParentStopsAfterOneEntry(t *testing.T) {
+	fake := &fakePlatform{
+		lookups: map[int]lookupResult{
+			700: {parentPID: 700, binaryPath: "/self"},
+		},
+	}
+	withPlatform(t, fake)
+
+	chain, err := Walk(700)
+	if err != nil {
+		t.Fatalf("self-parent should not be an error, got %v", err)
+	}
+	if len(chain.Entries) != 1 || chain.Entries[0].PID != 700 {
+		t.Fatalf("want [700], got %+v", chain.Entries)
+	}
+}

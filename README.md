@@ -53,7 +53,7 @@ For diagnostic output (pairing prompts, debugging), `pidchain.Chain(pid)` return
 
 ## How we test it
 
-The integration test (`pidchain_stdio_integration_test.go`) exercises the canonical MCP-style stdio bridge pattern: a probe binary at `testdata/integration/probe/` is built into a temp directory, launched via `exec.Command`, and calls `pidchain.Chain(os.Getppid())` to fingerprint the test process that spawned it. Three runs verify that the fingerprint is deterministic across invocations and that the on-disk codesign path actually fires (at least one ancestor has a non-empty BundleIdentifier).
+The integration test (`pidchain_stdio_integration_test.go`) exercises the canonical MCP-style stdio bridge pattern: a probe binary at `testdata/integration/probe/` is built into a temp directory, launched via `exec.Command`, and calls `pidchain.Chain(os.Getpid())` — fingerprinting itself plus the test process that spawned it and that process's ancestors. Three runs verify that the fingerprint is deterministic across invocations and that the on-disk codesign path actually fires (at least one ancestor has a non-empty BundleIdentifier).
 
 The library accepts any PID. If you obtain a peer PID through another kernel-attested mechanism — `LOCAL_PEERPID` over a Unix domain socket, `GetNamedPipeClientProcessId` over a Windows named pipe, or some other transport — pidchain will return a fingerprint just fine. We don't ship integration tests for those paths; if you use them, validate against your own test fixtures.
 

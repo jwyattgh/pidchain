@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.0](https://github.com/jwyattgh/pidchain/compare/v0.1.2...v0.2.0) (2026-10-10)
+
+
+### Bug Fixes
+
+* return ErrPlatformUnsupported instead of panicking when CGo is off ([#40](https://github.com/jwyattgh/pidchain/issues/40)) ([b504559](https://github.com/jwyattgh/pidchain/commit/b504559c31ce58c71e01b9cd9cef9b2fc0587a80))
+
+
+### Dependencies
+
+* require Go 1.26 and bump golang.org/x/sys to 0.48.0 ([#39](https://github.com/jwyattgh/pidchain/issues/39)) ([04f8594](https://github.com/jwyattgh/pidchain/commit/04f859407fc4cf867639eb3ef9c5e6ced086c75a))
+
 ## [0.1.2](https://github.com/jwyattgh/pidchain/compare/v0.1.1...v0.1.2) (2026-09-28)
 
 

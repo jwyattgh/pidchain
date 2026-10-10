@@ -13,7 +13,7 @@ import (
 )
 
 func TestIntegration_Stdio_ProbeFingerprintsCaller(t *testing.T) {
-	if runtime.GOOS != "darwin" && runtime.GOOS != "windows" {
+	if !platformSupported {
 		t.Skip("integration test requires a supported platform (darwin or windows)")
 	}
 

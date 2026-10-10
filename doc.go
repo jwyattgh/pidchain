@@ -17,8 +17,9 @@
 //
 // # Supported platforms
 //
-// pidchain supports macOS and Windows. Linux and other platforms compile
-// but return ErrPlatformUnsupported at runtime.
+// pidchain supports macOS and Windows, built with CGo enabled. Linux, other
+// platforms, and macOS or Windows builds with CGo disabled compile but
+// return ErrPlatformUnsupported at runtime.
 //
 // # Concurrency
 //

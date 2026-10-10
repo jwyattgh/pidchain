@@ -43,6 +43,17 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      # The darwin and windows walkers need CGo. Without it the build must
+      # fall back to the unsupported walker instead of panicking at runtime.
+      - name: Vet and test with CGo disabled
+        if: matrix.os != 'ubuntu-latest'
+        shell: bash
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          go vet ./...
+          go test ./...
+
       - name: Test
         shell: bash
         run: |

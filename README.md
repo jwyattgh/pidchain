@@ -71,7 +71,7 @@ The library accepts any PID. If you obtain a peer PID through another kernel-att
 go get github.com/jwyattgh/pidchain
 ```
 
-Requires Go 1.25+. Builds with CGo enabled on macOS and Windows. CGo is required because pidchain uses the platform's native code-signing APIs (Security.framework on macOS, Crypt API on Windows) directly rather than shelling out to CLI tools.
+Requires Go 1.25+. Builds with CGo enabled on macOS and Windows. CGo is required because pidchain uses the platform's native code-signing APIs (Security.framework on macOS, Crypt API on Windows) directly rather than shelling out to CLI tools. With CGo disabled, pidchain still builds on those platforms but every call returns `ErrPlatformUnsupported`.
 
 ## API reference
 

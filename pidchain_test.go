@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"os"
-	"runtime"
 	"testing"
 
 	"github.com/jwyattgh/pidchain"
@@ -13,7 +12,7 @@ import (
 )
 
 func TestFingerprint_NonexistentPID_ReturnsErrProcessDead(t *testing.T) {
-	if runtime.GOOS != "darwin" && runtime.GOOS != "windows" {
+	if !platformSupported {
 		t.Skip("requires a supported platform")
 	}
 	_, err := pidchain.Fingerprint(999999999)
@@ -23,7 +22,7 @@ func TestFingerprint_NonexistentPID_ReturnsErrProcessDead(t *testing.T) {
 }
 
 func TestChain_NonexistentPID_ReturnsErrProcessDead(t *testing.T) {
-	if runtime.GOOS != "darwin" && runtime.GOOS != "windows" {
+	if !platformSupported {
 		t.Skip("requires a supported platform")
 	}
 	chain, err := pidchain.Chain(999999999)
@@ -39,7 +38,7 @@ func TestChain_NonexistentPID_ReturnsErrProcessDead(t *testing.T) {
 }
 
 func TestUnsupportedPlatform_ReturnsErrPlatformUnsupported(t *testing.T) {
-	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
+	if platformSupported {
 		t.Skip("supported platform; nothing to assert")
 	}
 	_, err := pidchain.Fingerprint(os.Getpid())
@@ -49,7 +48,7 @@ func TestUnsupportedPlatform_ReturnsErrPlatformUnsupported(t *testing.T) {
 }
 
 func TestFingerprint_Self_Integration(t *testing.T) {
-	if runtime.GOOS != "darwin" && runtime.GOOS != "windows" {
+	if !platformSupported {
 		t.Skip("requires a supported platform")
 	}
 	fp, err := pidchain.Fingerprint(os.Getpid())
@@ -65,7 +64,7 @@ func TestFingerprint_Self_Integration(t *testing.T) {
 }
 
 func TestChain_Self_Integration(t *testing.T) {
-	if runtime.GOOS != "darwin" && runtime.GOOS != "windows" {
+	if !platformSupported {
 		t.Skip("requires a supported platform")
 	}
 	chain, err := pidchain.Chain(os.Getpid())
@@ -84,7 +83,7 @@ func TestChain_Self_Integration(t *testing.T) {
 }
 
 func TestFingerprint_Self_Deterministic(t *testing.T) {
-	if runtime.GOOS != "darwin" && runtime.GOOS != "windows" {
+	if !platformSupported {
 		t.Skip("requires a supported platform")
 	}
 	a, err := pidchain.Fingerprint(os.Getpid())
@@ -105,7 +104,7 @@ func TestFingerprint_Self_Deterministic(t *testing.T) {
 // fields))) for the same pid. They share one internal build path; this test
 // catches any future divergence between the two wrappers.
 func TestPublicAPIConsistency(t *testing.T) {
-	if runtime.GOOS != "darwin" && runtime.GOOS != "windows" {
+	if !platformSupported {
 		t.Skip("requires a supported platform")
 	}
 	chain, err := pidchain.Chain(os.Getpid())

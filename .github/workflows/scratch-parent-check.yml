@@ -1,0 +1,28 @@
+# TEMPORARY: read-only look at a live Windows process table. Removed after use.
+name: scratch-parent-check
+on: pull_request
+permissions: {}
+jobs:
+  look:
+    runs-on: windows-latest
+    steps:
+      - shell: pwsh
+        run: |
+          $os = Get-CimInstance Win32_OperatingSystem
+          "Machine up since $($os.LastBootUpTime) (now $(Get-Date))"
+          $procs = Get-CimInstance Win32_Process
+          $byId = @{}; foreach ($p in $procs) { $byId[[int]$p.ProcessId] = $p }
+          $dead = 0; $reused = @()
+          foreach ($c in $procs) {
+            $ppid = [int]$c.ParentProcessId
+            if ($ppid -eq 0 -or $c.ProcessId -eq $ppid) { continue }
+            $p = $byId[$ppid]
+            if (-not $p) { $dead++; continue }
+            if ($p.CreationDate -gt $c.CreationDate) { $reused += [pscustomobject]@{
+              Child = "$($c.ProcessId) $($c.Name) started $($c.CreationDate)"
+              NumberNowHeldBy = "$($p.ProcessId) $($p.Name) started $($p.CreationDate)" } }
+          }
+          "Processes: $($procs.Count)"
+          "Recorded parent has exited, number unused: $dead"
+          "Recorded parent number now held by a LATER process: $($reused.Count)"
+          $reused | Format-List | Out-String -Width 300

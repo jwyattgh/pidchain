@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.1](https://github.com/jwyattgh/pidchain/compare/v0.2.0...v0.2.1) (2026-10-10)
+
+
+### Bug Fixes
+
+* stop the ancestry walk when a parent PID repeats ([#43](https://github.com/jwyattgh/pidchain/issues/43)) ([eab0776](https://github.com/jwyattgh/pidchain/commit/eab0776bb75b3039dcfa64cf3d9251e6205e0782))
+
+
+### Documentation
+
+* explain which pid to pass to Fingerprint and Chain ([7ccad4a](https://github.com/jwyattgh/pidchain/commit/7ccad4a3fca6130ca8b1a555455934a5c50c314a))
+
 ## [0.2.0](https://github.com/jwyattgh/pidchain/compare/v0.1.2...v0.2.0) (2026-10-10)
 
 

@@ -127,9 +127,9 @@ A floating tag can be force-moved by the action's owner, so a compromised mainta
 ### 2.5 What CI does and does not enforce
 
 CI **does** enforce, on every PR and every push to main, that:
-- Build, vet, race-tested unit tests pass on macOS / Windows / Ubuntu × Go 1.25 / 1.26.
+- Build, vet, race-tested unit tests pass on macOS / Windows / Ubuntu × Go 1.26 / 1.27.
 - Per-OS coverage thresholds (95 / 95 / 91) are met.
-- `golangci-lint v2.6.2` finds nothing.
+- `golangci-lint v2.14.0` finds nothing.
 - `gosec` finds zero issues (failure is enforced via `jq` count, regardless of `continue-on-error` on the scan step itself).
 - `govulncheck` finds nothing.
 
@@ -231,7 +231,7 @@ Listed from **must-do-before-public** down to nice-to-have.
      - `Lint`
      - `Security scan`
      - `Vulnerability scan`
-     - (Optionally: `Test (..., Go 1.25)` if 1.25 should be a release floor.)
+     - (Optionally: `Test (..., Go 1.27)` to also gate on the newest release.)
    - Require branches to be up to date before merging.
    - Block force-pushes.
    - Block branch deletion.

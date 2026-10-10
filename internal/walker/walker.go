@@ -35,10 +35,13 @@ var New func() Platform
 //   - (zero, ErrProcessDead) if startPID itself cannot be looked up.
 //   - (chain, nil) on success. A mid-walk lookup failure (kernel terminator
 //     reached, ancestor exited) stops the walk and returns the partial
-//     chain without an error.
+//     chain without an error. So does a parent PID already in the chain,
+//     which Windows can report after PID reuse; without this stop the
+//     walk would loop forever.
 func Walk(startPID int) (ProcessChain, error) {
 	p := New()                // platform: the active per-OS implementation
 	var entries []ProcessInfo // ordered list of ancestors, queried PID first
+	seen := map[int]bool{}    // PIDs already in entries; guards against parent cycles
 	current := startPID
 
 	for {
@@ -56,7 +59,9 @@ func Walk(startPID int) (ProcessChain, error) {
 			BinaryPath: path,
 		}))
 
-		if isKernelTerminator(ppid, current) {
+		seen[current] = true
+
+		if isKernelTerminator(ppid, current) || seen[ppid] {
 			break
 		}
 		current = ppid

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/jwyattgh/pidchain/compare/v0.2.1...v0.2.2) (2026-11-02)
+
+
+### Dependencies
+
+* bump golang.org/x/sys from 0.48.0 to 0.49.0 ([#45](https://github.com/jwyattgh/pidchain/issues/45)) ([e948638](https://github.com/jwyattgh/pidchain/commit/e94863860952784ee5fdaca8a9bc428df04732f8))
+
 ## [0.2.1](https://github.com/jwyattgh/pidchain/compare/v0.2.0...v0.2.1) (2026-10-10)
 
 
